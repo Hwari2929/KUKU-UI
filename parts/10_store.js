@@ -66,7 +66,11 @@ async function loadSettings() {
   const sec = await DB.get('meta', 'secrets');
   S.secrets = Object.assign({ apiKey: '', openaiKey: '', ghToken: '' }, sec || {});
   const b = S.settings.budget;
-  if (b.anchorUSD == null || b.anchorTs == null) { b.anchorUSD = +(b.creditKRW / b.krwPerUSD).toFixed(4); b.anchorTs = Date.now(); }
+  if (saved && saved.budget && saved.budget.creditKRW != null && saved.budget.creditUSD == null) {   // 구버전(원화 기준 13만원) → 100달러 기준으로 옮기되 이미 쓴 금액은 유지
+    const old = saved.budget.creditKRW / (saved.budget.krwPerUSD || 1400); if (b.anchorUSD != null) b.anchorUSD = +(b.anchorUSD + (b.creditUSD - old)).toFixed(4);
+  }
+  delete b.creditKRW;
+  if (b.anchorUSD == null || b.anchorTs == null) { b.anchorUSD = b.creditUSD; b.anchorTs = Date.now(); }
   S.sync = Object.assign({ lastHead: null, lastPull: null, branch: null }, (await DB.get('meta', 'sync')) || {});
   S.pending = (await DB.get('meta', 'pending')) || [];
   const ui = await DB.get('meta', 'ui'); if (ui) Object.assign(S.ui, ui);

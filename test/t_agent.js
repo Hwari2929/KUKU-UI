@@ -21,7 +21,7 @@ const load = require('./load');
 const X = load(['00_util.js', '10_store.js', '20_text.js', '30_gh.js', '40_llm.js', '45_skills.gen.js', '50_tools.js', '60_agent.js'], { fetch: (...a) => global.fetch(...a) }, 'Chats, runTurn, submit, Pending, Ledger, Budget, compactHistory, estimatePrompt, stopRun, addLocal');
 const { S, FS, Chats, submit, Pending, Ledger, Budget, compactHistory, estimatePrompt, stopRun, UI } = X;
 (async () => {
-  S.secrets.apiKey = 'k'; S.settings.budget.anchorUSD = 92.8571; S.settings.budget.anchorTs = 0;
+  S.secrets.apiKey = 'k'; S.settings.budget.anchorUSD = 100; S.settings.budget.anchorTs = 0;
   FS.set('CLAUDE.md', '# 규칙'); FS.set('lore/인물/린디웨.md', '# 린디웨\n협력팀장'); FS.set('docs/VOICES.md', '# V\n## 린디웨\n해요체');
   const streams = []; UI.stream = (l) => streams.push(l && { status: l.status, text: l.text, tools: l.tools.length });
   const chat = Chats.create();

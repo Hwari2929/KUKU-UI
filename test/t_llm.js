@@ -23,10 +23,10 @@ const calls = [];
 let script = [];
 global.fetch = async (url, opts = {}) => { calls.push({ url, opts, body: opts.body ? JSON.parse(opts.body) : null }); const s = script.shift(); if (typeof s === 'function') return s(opts); return s; };
 const load = require('./load');
-const X = load(['00_util.js', '10_store.js', '20_text.js', '30_gh.js', '40_llm.js'], { fetch: (...a) => global.fetch(...a) }, 'LLM, Ledger, Budget, costOf, priceFor, buildBody, anthropicStream, openaiStream, toOpenAIMessages, normUsage, estimateCost, ApiError, zeroUsage');
-const { S, LLM, Ledger, Budget, costOf, buildBody, anthropicStream, openaiStream } = X;
+const X = load(['00_util.js', '10_store.js', '20_text.js', '30_gh.js', '40_llm.js'], { fetch: (...a) => global.fetch(...a) }, 'LLM, Ledger, Budget, FX, loadSettings, altUSD, costOf, priceFor, buildBody, anthropicStream, openaiStream, toOpenAIMessages, normUsage, estimateCost, ApiError, zeroUsage');
+const { S, LLM, Ledger, Budget, FX, loadSettings, altUSD, costOf, buildBody, anthropicStream, openaiStream } = X;
 (async () => {
-  S.secrets.apiKey = 'sk-test'; S.settings.budget.anchorUSD = 92.8571; S.settings.budget.anchorTs = 0;
+  S.secrets.apiKey = 'sk-test'; S.settings.budget.anchorUSD = 100; S.settings.budget.anchorTs = 0;
   // 비용: sonnet 5.5  in 1000*2 + cw5 2000*2.5 + cr 10000*0.1 + out 500*10 = 2000+5000+1000+5000 = 13000 /1e6
   const c = costOf('claude-sonnet-5-5', { input: 1000, cw5: 2000, cw1h: 0, cacheRead: 10000, output: 500 }); near(c.total, 0.013, 'sonnet'); near(c.saved, 10000 * 1.9e-6, 'saved'); near(c.premium, 2000 * 0.5e-6, 'premium');
   near(costOf('claude-sonnet-5-5-20261201', { input: 1e6, cw5: 0, cw1h: 0, cacheRead: 0, output: 0 }).total, 2, '날짜 접미사 모델 접두 매칭');
@@ -52,7 +52,7 @@ const { S, LLM, Ledger, Budget, costOf, buildBody, anthropicStream, openaiStream
   const tt = Ledger.turns(); eq(tt.length, 1); eq(tt[0].iters, 2); near(tt[0].cost, e1.cost + e2.cost, 'turn sum'); eq(tt[0].usage.cacheRead, 22000);
   ok(Ledger.cacheHit() > 0.5, 'cache hit'); ok(Ledger.csv().split('\n').length === 3, 'csv');
   // 예산
-  let st = Budget.state(); near(st.remaining, 92.8571 - e1.cost - e2.cost, 'remaining'); eq(st.level, 'ok'); near(st.creditUSD, 130000 / 1400, 'credit');
+  let st = Budget.state(); near(st.remaining, 100 - e1.cost - e2.cost, 'remaining'); eq(st.level, 'ok'); near(st.creditUSD, 100, 'credit');
   Budget.calibrateUSD(50); near(Budget.remaining(), 50, '보정 직후'); eq(S.settings.budget.calibLog.length, 1);
   await sleepMs(5); await Ledger.add({ turnId: 't2', model: 'claude-opus-5-5', usage: { input: 1e6, output: 0, cacheRead: 0, cw5: 0, cw1h: 0 } }); near(Budget.remaining(), 46, '보정 이후 지출만 차감'); ok(Budget.usedPct() > 50);
   Budget.calibrateUSD(0.4); eq(Budget.level(), 'stop'); ok(!Budget.precheck(0.01).ok); Budget.calibrateUSD(10); ok(Budget.precheck(0.01).ok); ok(!Budget.precheck(20).ok, '최악 비용 초과'); Budget.calibrateUSD(10 + 0.0); 
@@ -83,6 +83,13 @@ const { S, LLM, Ledger, Budget, costOf, buildBody, anthropicStream, openaiStream
   // count_tokens
   S.settings.provider = 'anthropic'; script = [{ ok: true, status: 200, headers: new Map(), json: async () => ({ input_tokens: 1234 }) }]; calls.length = 0;
   const ct = await LLM.count({ model: 'claude-sonnet-5-5', sys: [{ text: 'x', cache: true }], tools: [], messages: [{ role: 'user', content: 'q' }] }); eq(ct, { tokens: 1234, approx: false }); ok(calls[0].url.endsWith('/v1/messages/count_tokens') && !('max_tokens' in calls[0].body) && !('stream' in calls[0].body), 'count body');
+  // ── 구버전 설정(원화 13만원 기준) → 100달러 기준 이전: 이미 쓴 금액(7.1429달러 소모 가정) 유지
+  await X.DB.init(); await X.DB.put('meta', 'settings', { budget: { creditKRW: 130000, krwPerUSD: 1400, anchorUSD: 85.7143, anchorTs: 5 } }); await loadSettings();
+  { const b = S.settings.budget; eq(b.creditUSD, 100); eq(b.creditKRW, undefined); near(b.anchorUSD, 92.8572, 'anchor 이전'); }
+  S.settings.budget.krwPerUSD = 1400; S.settings.budget.showKRW = true; eq(altUSD(1), ' (₩1,400)'); S.settings.budget.showKRW = false; eq(altUSD(1), '');
+  // 환율: 양쪽 다 실패하면 마지막 값 유지
+  S.settings.budget.krwPerUSD = 1388; S.settings.budget.fx = { rate: 1388, ts: 1, date: 'd', source: 'x' }; script = [{ ok: false, status: 500, headers: new Map(), json: async () => ({}) }, { ok: true, status: 200, headers: new Map(), json: async () => ({ result: 'success', rates: { KRW: 99999 } }) }];
+  const fr = await FX.refresh({ silent: true }); ok(!fr.ok && fr.errors.length === 2 && S.settings.budget.krwPerUSD === 1388 && S.settings.budget.fx.ts === 1, '환율 실패 시 마지막 값 유지');
   console.log(`llm OK (${n} assertions)`);
 })().catch((e) => { console.error('FAIL', e); process.exit(1); });
 function sleepMs(ms) { return new Promise((r) => setTimeout(r, ms)); }

@@ -18,11 +18,13 @@ const gitSha = (s) => { const b = Buffer.from(s, 'utf8'); return crypto.createHa
 const repo = { files: new Map(), trees: new Map(), blobs: new Map(), commits: [], head: null }; let cn = 0;
 function commitAll(msg) { const es = [...repo.files].map(([p, c]) => ({ path: p, mode: '100644', type: 'blob', sha: gitSha(c), size: Buffer.byteLength(c) })); es.forEach((e) => repo.blobs.set(e.sha, repo.files.get(e.path))); const t = 'tree' + ++cn; repo.trees.set(t, es); const c = 'commit' + cn; repo.commits.push({ sha: c, tree: { sha: t }, message: msg }); repo.head = c; }
 repo.files.set('lore/인물/린디웨.md', '# 린디웨\n협력팀장. [[비비안]] 과 친구.\n'); repo.files.set('lore/인물/비비안.md', '# 비비안\n작전반.\n'); repo.files.set('docs/VOICES.md', '# VOICES\n## 린디웨\n해요체\n'); repo.files.set('CLAUDE.md', '# 규칙\n숫자는 아라비아 숫자\n'); commitAll('init');
-let anth = []; const anthReqs = [];
+let anth = []; const anthReqs = []; let fxMode = 'ok'; const fxCalls = [];
 const J = (o, st = 200) => ({ ok: st < 300, status: st, statusText: 'x', headers: { get: () => null }, json: async () => o, text: async () => JSON.stringify(o) });
 const mockFetch = async (url, opts = {}) => {
   const u = new URL(url), p = decodeURIComponent(u.pathname), method = opts.method || 'GET';
   if (u.host === 'api.anthropic.com') { if (p.endsWith('/models')) return J({ data: [{ id: 'claude-sonnet-5-5', display_name: 'Sonnet 5.5' }] }); if (p.endsWith('/count_tokens')) return J({ input_tokens: 4321 }); anthReqs.push(JSON.parse(opts.body)); const s = anth.shift(); if (!s) throw new Error('anthropic script empty'); return sseRes(s); }
+  if (u.host === 'api.frankfurter.dev') { fxCalls.push(u.host); return fxMode === 'ok' ? J({ base: 'USD', date: '2026-10-23', rates: { KRW: 1385.5 } }) : J({}, 500); }
+  if (u.host === 'open.er-api.com') { fxCalls.push(u.host); return J({ result: 'success', time_last_update_utc: 'Sun, 25 Oct 2026 00:02:31 +0000', rates: { KRW: 1401.25 } }); }
   if (u.host === 'raw.githubusercontent.com') { const m = p.match(/^\/[^/]+\/[^/]+\/([^/]+)\/(.+)$/); const c = repo.files.get(m[2]); return c == null ? J('nf', 404) : { ok: true, status: 200, text: async () => c }; }
   let m;
   if ((m = p.match(/\/git\/ref\/heads\/(.+)$/))) return J({ object: { sha: repo.head } });
@@ -42,7 +44,12 @@ const mockFetch = async (url, opts = {}) => {
   const W = dom.window; const $ = (s) => W.document.querySelector(s), $$ = (s) => [...W.document.querySelectorAll(s)]; const ev = (c) => W.eval(c);
   for (let i = 0; i < 100 && !W.__ready; i++) await sleep(30);
   ok(W.__ready != null, '부팅 완료'); eq(ev('DB.kind'), 'indexeddb');
-  ok($('#top .brand').textContent.includes('ERTES')); ok($('#btnBudget').textContent.includes('₩') && $('#btnBudget').textContent.includes('130'), '예산 칩: ' + $('#btnBudget').textContent);
+  ok($('#top .brand').textContent.includes('ERTES')); ok($('#btnBudget').textContent.includes('$100') && !$('#btnBudget').textContent.includes('₩'), '예산 칩(달러): ' + $('#btnBudget').textContent);
+  // ── 환율: 첫 실행에서 한 번 받아 기록
+  for (let i = 0; i < 50 && !ev('S.settings.budget.fx.ts'); i++) await sleep(30);
+  eq(ev('S.settings.budget.fx.rate'), 1385.5); eq(ev('S.settings.budget.krwPerUSD'), 1385.5); eq(ev('S.settings.budget.fx.source'), 'frankfurter.dev'); eq(ev('S.settings.budget.fx.date'), '2026-10-23'); eq(ev('S.settings.budget.creditUSD'), 100); eq(ev('S.settings.budget.creditKRW'), undefined);
+  eq(fxCalls.length, 1, '첫 실행에 한 번만'); ok(Math.abs(ev('Budget.remaining()') - 100) < 1e-6, '남은 크레딧 100달러');
+  fxMode = 'bad'; const fr = await ev('FX.refresh({ silent: true })'); ok(fr.ok && fr.source === 'open.er-api.com' && ev('S.settings.budget.krwPerUSD') === 1401.25, '보조 출처로 갱신'); eq(fxCalls.length, 3);
   // ── 설정에 키 넣고 GitHub 에서 받기
   ev("S.secrets.apiKey='sk-test'; S.settings.gh.branch='main'; S.settings.gh.includes=['lore/','docs/','CLAUDE.md']; S.settings.pinned=['CLAUDE.md']");
   $('#sideTabs [data-tab=sync]').click(); await sleep(30); ok($('#sidePane').textContent.includes('Hwari2929/ERTES'), '동기화 탭'); $('#sidePane [data-act=doPull]').click();
@@ -73,13 +80,16 @@ const mockFetch = async (url, opts = {}) => {
   eq(anthReqs.length, 2); ok(anthReqs[0].system[0].text.includes('아라비아 숫자') && anthReqs[0].system[0].text.includes('[고정 문서: CLAUDE.md]'), '시스템 프롬프트 + 고정 문서');
   ok(anthReqs[0].system[1].text.includes('파일 색인') && anthReqs[0].system.every((b) => b.cache_control), '색인 블록 캐시'); ok(anthReqs[0].messages[0].content[0].text.includes('[열린 문서:'), '열린 문서 알림 포함');
   ok($('#msgs').textContent.includes('린디웨는 협력팀장이에요'), '답변 표시'); ok($('#msgs .tcall'), '도구 카드'); ok($('#msgs .turnsum'), '턴 요약'); const ts = $('#msgs .turnsum').textContent;
-  ok(/호출 2회/.test(ts) && /\$0\.\d+/.test(ts) && /₩\d+/.test(ts) && ts.includes('읽기') && ts.includes('쓰기'), '턴 요약 내용: ' + ts.slice(0, 160));
+  ok(/호출 2회/.test(ts) && /\$0\.\d+/.test(ts) && /₩\d+/.test(ts) && ts.indexOf('$') < ts.indexOf('₩') && ts.includes('읽기') && ts.includes('쓰기'), '턴 요약 내용: ' + ts.slice(0, 160));
   const cost1 = ev('S.ledger.reduce((a,e)=>a+e.cost,0)'); // 500*2+3000*2.5+200*10 =10500 ; 700*2+3000*.1+150*10 = 3200 → 13700e-6
-  ok(Math.abs(cost1 - 0.0137) < 1e-9, '비용 계산 ' + cost1); ok($('#btnBudget').textContent.includes('₩'), '칩 갱신');
+  ok(Math.abs(cost1 - 0.0137) < 1e-9, '비용 계산 ' + cost1); ok(/\$9\d\.\d+/.test($('#btnBudget').textContent), '칩 갱신: ' + $('#btnBudget').textContent);
   // ── 예산 패널
   $('#btnBudget').click(); await sleep(50); const bt = $('.modal').textContent; ok(bt.includes('남은 크레딧') && bt.includes('캐시 읽기') && bt.includes('토큰 종류별'), '예산 현황'); ok(/\$0\.0137/.test(bt), '누적 비용 표시');
   $('.modal [data-t=turns]').click(); await sleep(30); ok($('.modal').textContent.includes('린디웨는 어떤 인물이야?'), '턴 내역 행'); $('.modal tr.cl').click(); await sleep(30); ok($$('.modal tr.sub').length === 2, '호출별 펼침');
   $('.modal [data-t=cfg]').click(); await sleep(30); const cal = $('.modal #calVal'); cal.value = '50'; $('.modal #calUnit').value = 'USD'; $('.modal [data-act=budCalib]').click(); await sleep(50); near(ev('Budget.remaining()'), 50); ok($('.modal').textContent.includes('보정 시각'), '보정 기록');
+  { const ct = $('.modal').textContent; ok(ct.includes('총 크레딧 (USD)') && ct.includes('지금 갱신') && ct.includes('마지막으로 받은 값') && ct.includes('Rates By Exchange Rate API'), '환율 설정 UI: ' + ct.slice(ct.indexOf('환율'), ct.indexOf('환율') + 120)); eq($('.modal #cfCredit').value, '100');
+    fxMode = 'ok'; $('.modal [data-act=fxRefresh]').click(); for (let i = 0; i < 50 && ev('S.settings.budget.krwPerUSD') !== 1385.5; i++) await sleep(30); eq(ev('S.settings.budget.krwPerUSD'), 1385.5); await sleep(30); eq($('.modal #cfRate').value, '1385.5');
+    ok(!W.document.documentElement.classList.contains('nokrw')); $('.modal #cfShowKRW').checked = false; $('.modal [data-act=budSave]').click(); await sleep(30); ok(W.document.documentElement.classList.contains('nokrw'), '원화 숨김'); eq(ev('altUSD(1)'), ''); $('.modal #cfShowKRW').checked = true; $('.modal [data-act=budSave]').click(); await sleep(30); ok(!W.document.documentElement.classList.contains('nokrw')); }
   $('.modal [data-t=stats]').click(); await sleep(30); ok($('.modal').textContent.includes('모델별')); ev('Modal.closeAll()');
   // ── AI 쓰기 승인
   anth = [reply({ tools: [{ name: 'write_note', input: { path: 'drafts/장면/new.md', content: '## 본문\n세 잔', summary: '시험' } }] }), reply({ text: '올렸어요.' })];

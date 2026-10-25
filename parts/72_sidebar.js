@@ -147,7 +147,7 @@ const Side = {
     const uniq = []; const seen = new Set(); for (const l of out) { const k = l.target + '#' + l.heading; if (!seen.has(k)) { seen.add(k); uniq.push(l); } }
     const lintSm = lintSummary(Ed.lint);
     pane.innerHTML = `<div class="card flat"><b>${esc(titleOf(f.path))}</b> ${H.badge(FS.status(f))}<div class="xs muted mono" style="word-break:break-all">${esc(f.path)}</div>
-      <div class="sm" style="margin-top:6px">${fmtN(text.length)}자 · 약 ${fmtN(tok)} 토큰</div><div class="xs muted">AI 가 이 문서를 통째로 읽으면 입력 약 ${fmtUSD(cost)} (${fmtKRW(cost)}), 캐시 적중 시 약 1/10</div>
+      <div class="sm" style="margin-top:6px">${fmtN(text.length)}자 · 약 ${fmtN(tok)} 토큰</div><div class="xs muted">AI 가 이 문서를 통째로 읽으면 입력 약 ${fmtUSD(cost)}<span class="krw"> (${fmtKRW(cost)})</span>, 캐시 적중 시 약 1/10</div>
       <div class="sm" style="margin-top:4px">린트: <span class="err">오류 ${lintSm.error}</span> · <span class="warn">경고 ${lintSm.warn}</span></div></div>
       <div class="sect">목차 (${ol.length})</div>${ol.length ? ol.slice(0, 200).map((h) => `<div class="tr" data-act="goLine" data-l="${h.line}" style="padding-left:${6 + (h.lvl - 1) * 12}px"><span class="nm">${esc(h.title)}</span><span class="xs muted">${kfmt(h.size)}</span></div>`).join('') : '<div class="xs muted" style="padding:4px 8px">제목이 없음</div>'}
       <div class="sect">나가는 링크 (${uniq.length})</div>${uniq.map((l) => `<div class="tr" data-act="linkOpen" data-t="${esc(l.target)}" data-h="${esc(l.heading)}"><span class="nm ${l.path ? '' : 'err'}">${l.embed ? '⤷ ' : ''}${esc(l.target)}${l.heading ? '#' + esc(l.heading) : ''}</span>${l.path ? '' : '<span class="bd D">없음</span>'}</div>`).join('') || '<div class="xs muted" style="padding:4px 8px">없음</div>'}

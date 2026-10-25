@@ -300,7 +300,7 @@ const Ledger = {
    콘솔에서 본 실제 잔액으로 언제든 기준점을 다시 맞춘다(보정). */
 const Budget = {
   get cfg() { return S.settings.budget; },
-  creditUSD() { return this.cfg.creditKRW / this.cfg.krwPerUSD; },
+  creditUSD() { return this.cfg.creditUSD; },
   spentSince() { return Ledger.since(this.cfg.anchorTs).cost; },
   remaining() { return this.cfg.anchorUSD - this.spentSince(); },
   usedUSD() { return Math.max(0, this.creditUSD() - this.remaining()); },
@@ -312,7 +312,7 @@ const Budget = {
   // 호출 전에 막을지 판단. estUSD = 이번 호출의 최악 비용 어림.
   precheck(estUSD = 0) {
     const r = this.remaining(), lv = this.level();
-    if (lv === 'stop') return { ok: false, level: lv, msg: `예산 한도(${this.cfg.stopPct}% 사용 또는 예비금 $${this.cfg.reserveUSD} 이하)에 도달해 중단됨. 남은 약 ${fmtUSD(r)} (${fmtKRW(r)}). 한도를 올리거나 잔액을 보정하세요.` };
+    if (lv === 'stop') return { ok: false, level: lv, msg: `예산 한도(${this.cfg.stopPct}% 사용 또는 예비금 $${this.cfg.reserveUSD} 이하)에 도달해 중단됨. 남은 약 ${fmtUSD(r)}${altUSD(r)}. 한도를 올리거나 잔액을 보정하세요.` };
     if (estUSD > r - this.cfg.reserveUSD) return { ok: false, level: 'stop', msg: `이번 호출의 최대 예상 비용 ${fmtUSD(estUSD)}가 남은 예산(${fmtUSD(r)})을 넘을 수 있어 중단함.` };
     return { ok: true, level: lv, msg: lv === 'warn' ? `예산 ${this.usedPct().toFixed(0)}% 사용 — 남은 약 ${fmtUSD(r)}` : '' };
   },
@@ -325,9 +325,33 @@ const Budget = {
   calibrateUSD(usd) { if (!(usd >= 0)) throw new Error('0 이상의 숫자를 넣으세요'); return this.anchorHere(+usd); },
   calibrateKRW(krw) { return this.calibrateUSD(krw / this.cfg.krwPerUSD); },
   // 크레딧 총액·환율을 바꿀 때: 남은 금액은 그대로 두고 총액만 갱신
-  setCredit(krw, rate) {
-    const b = this.cfg, rem = this.remaining(); b.creditKRW = krw; if (rate) b.krwPerUSD = rate;
+  setCredit(usd, rate) {
+    const b = this.cfg, rem = this.remaining(); b.creditUSD = usd; if (rate) b.krwPerUSD = rate;
     b.anchorUSD = +rem.toFixed(4); b.anchorTs = Date.now(); saveSettings(); UI.budget();
   },
-  reset() { const b = this.cfg; b.anchorUSD = +(b.creditKRW / b.krwPerUSD).toFixed(4); b.anchorTs = Date.now(); b.calibLog = []; saveSettings(); UI.budget(); },
+  reset() { const b = this.cfg; b.anchorUSD = +b.creditUSD.toFixed(4); b.anchorTs = Date.now(); b.calibLog = []; saveSettings(); UI.budget(); },
+};
+
+/* ── 환율 (USD→KRW): 첫 실행 때 한 번 받아 기록하고, 이후엔 사용자가 눌러서 갱신한다. 실패해도 마지막 값을 그대로 쓴다. ── */
+const FX = {
+  sources: [
+    { id: 'frankfurter.dev', url: 'https://api.frankfurter.dev/v1/latest?base=USD&symbols=KRW', parse: (j) => ({ rate: j && j.rates && j.rates.KRW, date: (j && j.date) || '' }) },
+    { id: 'open.er-api.com', url: 'https://open.er-api.com/v6/latest/USD', parse: (j) => ({ rate: j && j.result === 'success' && j.rates && j.rates.KRW, date: ((j && j.time_last_update_utc) || '').replace(/^\w+, /, '').replace(/ \+0000$/, ' UTC') }) },
+  ],
+  async refresh({ silent = false } = {}) {
+    const b = S.settings.budget; const errs = [];
+    for (const s of this.sources) {
+      try {
+        const r = await fetchT(s.url, { headers: { Accept: 'application/json' } }, 8000); if (!r.ok) throw new Error('HTTP ' + r.status);
+        const { rate, date } = s.parse(await r.json()); if (!(rate > 500 && rate < 5000)) throw new Error('이상한 값');
+        b.krwPerUSD = +Number(rate).toFixed(2); b.fx = { rate: b.krwPerUSD, ts: Date.now(), date, source: s.id }; saveSettings(); UI.budget();
+        if (!silent) UI.toast(`환율 갱신: 1달러 = ${b.krwPerUSD.toLocaleString('ko-KR')}원 (${s.id})`); return { ok: true, rate: b.krwPerUSD, source: s.id };
+      } catch (e) { errs.push(`${s.id}: ${e && e.message || e}`); }
+    }
+    if (!silent) UI.toast('⚠ 환율을 받지 못했습니다 — 마지막 값(' + b.krwPerUSD + '원)을 계속 씁니다. 직접 입력할 수도 있어요.', 6000);
+    return { ok: false, errors: errs };
+  },
+  // 첫 실행(받은 기록이 없을 때)에만 자동으로 한 번
+  async firstRun() { if (!S.settings.budget.fx.ts) return this.refresh({ silent: true }); return null; },
+  ageDays() { const t = S.settings.budget.fx.ts; return t ? (Date.now() - t) / 86400000 : null; },
 };

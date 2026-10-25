@@ -10,6 +10,8 @@ const debounce = (fn, ms) => { let t; const f = (...a) => { clearTimeout(t); t =
 const fmtN = (n) => Math.round(Number(n) || 0).toLocaleString('ko-KR');
 const fmtUSD = (n) => { n = Number(n) || 0; return '$' + (Math.abs(n) >= 100 ? n.toFixed(2) : Math.abs(n) >= 1 ? n.toFixed(3) : n.toFixed(4)); };
 const fmtKRW = (usd) => '₩' + Math.round((Number(usd) || 0) * (S.settings.budget.krwPerUSD || 1400)).toLocaleString('ko-KR');
+// 글로 쓰는 문장에 붙이는 보조 원화 표기 (설정에서 끄면 빈 문자열)
+const altUSD = (usd) => (S.settings.budget.showKRW ? ` (${fmtKRW(usd)})` : '');
 const fmtDT = (ts) => { const d = new Date(ts); const p = (x) => String(x).padStart(2, '0'); return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
 const dayKey = (ts) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const deepMerge = (def, saved) => {
@@ -69,7 +71,7 @@ const DEFAULT_SETTINGS = {
   writeDeny: ['lore/인물/*.md', 'lore/세력/', 'lore/지역/', 'lore/_틀/', 'src/', '.git/'],
   pinned: ['CLAUDE.md'],
   models: DEFAULT_MODELS,
-  budget: { creditKRW: 130000, krwPerUSD: 1400, anchorUSD: null, anchorTs: null, warnPct: 80, stopPct: 97, reserveUSD: 0.5, turnCapUSD: 1.0, costScale: 1, calibLog: [] },
+  budget: { creditUSD: 100, krwPerUSD: 1400, showKRW: true, fx: { rate: null, ts: null, date: '', source: '' }, anchorUSD: null, anchorTs: null, warnPct: 80, stopPct: 97, reserveUSD: 0.5, turnCapUSD: 1.0, costScale: 1, calibLog: [] },
 };
 const S = {
   settings: clone(DEFAULT_SETTINGS),

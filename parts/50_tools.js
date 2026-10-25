@@ -199,7 +199,7 @@ function parseSlash(text, chat) {
   if (cmd === '검색') { if (!rest) return { kind: 'local', md: '사용법: `/검색 키워드`' }; return { kind: 'local', md: '```\n' + String(ToolImpl.search({ query: rest })) + '\n```' }; }
   if (cmd === '읽기') { const [n, ...sec] = rest.split(/\s+/); const r = ToolImpl.read_note({ name: n, section: sec.join(' ') }); return { kind: 'local', md: '```\n' + (typeof r === 'object' ? r.text : r) + '\n```' }; }
   if (cmd === '린트') { const r = ToolImpl.lint({ path: rest }); return { kind: 'local', md: '```\n' + (typeof r === 'object' ? r.text : r) + '\n```' }; }
-  if (cmd === '예산') { const s = Budget.state(); return { kind: 'local', md: `사용 ${fmtUSD(s.used)} (${fmtKRW(s.used)}) · 남음 ${fmtUSD(s.remaining)} (${fmtKRW(s.remaining)}) · ${s.pct.toFixed(1)}% 사용` + (s.runway != null ? ` · 평균 ${fmtUSD(s.avgTurn)}/턴 → 약 ${fmtN(s.runway)}턴 남음` : '') }; }
+  if (cmd === '예산') { const s = Budget.state(); return { kind: 'local', md: `사용 ${fmtUSD(s.used)}${altUSD(s.used)} · 남음 ${fmtUSD(s.remaining)}${altUSD(s.remaining)} · ${s.pct.toFixed(1)}% 사용` + (s.runway != null ? ` · 평균 ${fmtUSD(s.avgTurn)}/턴 → 약 ${fmtN(s.runway)}턴 남음` : '') }; }
   const sk = Skills.find(cmd);
   if (sk) return { kind: 'skill', skill: sk.name, rest, note: `스킬 "${sk.name}" 켜짐 — ${sk.description}` };
   return { kind: 'local', md: `알 수 없는 명령 \`/${cmd}\`. \`/스킬\` 로 목록을 확인하세요.` };

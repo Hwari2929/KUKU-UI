@@ -180,3 +180,4 @@ table.tb{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric
 .sset{display:none}.sset.on{display:block}
 .help kbd{font-family:var(--mono);background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:0 6px;font-size:12.5px}.help td{padding:3px 10px 3px 0;vertical-align:top}
 @media print{#top,#side,#chatPane{display:none}}
+html.nokrw .krw{display:none!important}.krw{color:var(--muted)}td.krw,th.krw{color:inherit}

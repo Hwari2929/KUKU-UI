@@ -85,7 +85,7 @@ const Menu = {
 /* ── 테마 · 레이아웃 ── */
 function applyTheme() {
   const r = document.documentElement; r.dataset.theme = S.ui.theme || 'auto';
-  r.style.setProperty('--edfs', (S.ui.fontSize || 16) + 'px'); r.style.setProperty('--chatW', (S.ui.chatW || 460) + 'px');
+  r.classList.toggle('nokrw', !S.settings.budget.showKRW); r.style.setProperty('--edfs', (S.ui.fontSize || 16) + 'px'); r.style.setProperty('--chatW', (S.ui.chatW || 460) + 'px');
 }
 function applyLayout() {
   const a = document.getElementById('app'); a.classList.remove('mode-edit', 'mode-split', 'mode-chat'); a.classList.add('mode-' + (S.ui.mode || 'split')); a.classList.toggle('side-open', !!S.ui.sideOpen);
@@ -108,8 +108,8 @@ function initSplitter() {
 function renderTop() {
   const b = Budget.state(); const bt = document.getElementById('btnBudget'); if (!bt) return;
   bt.className = 'chip budget ' + (b.level === 'stop' ? 'stop' : b.level === 'warn' ? 'warn' : '');
-  bt.innerHTML = `<span>남음 <b>${fmtKRW(b.remaining)}</b></span><span class="muted">${b.pct.toFixed(0)}%</span>`;
-  bt.title = `사용 ${fmtUSD(b.used)} · 남음 ${fmtUSD(b.remaining)} (장부 기준)`;
+  bt.innerHTML = `<span>남음 <b>${fmtUSD(b.remaining)}</b></span><span class="muted">${b.pct.toFixed(0)}%</span>`;
+  bt.title = `사용 ${fmtUSD(b.used)}${altUSD(b.used)} · 남음 ${fmtUSD(b.remaining)}${altUSD(b.remaining)} (장부 기준)`;
   const p = document.getElementById('btnPending'); p.classList.toggle('hidden', !S.pending.length); p.querySelector('b').textContent = S.pending.length;
   const ch = FS.changes().length; const sy = document.getElementById('btnSync'); sy.querySelector('span').textContent = ch ? `변경 ${ch}` : '동기화'; sy.style.borderColor = ch ? 'var(--warn)' : '';
 }

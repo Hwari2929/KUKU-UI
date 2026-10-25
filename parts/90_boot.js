@@ -16,6 +16,7 @@ async function boot() {
     if (DB.kind !== 'indexeddb') UI.toast(`⚠ 저장소: ${DB.kind} (IndexedDB 불가) — 설정 → 데이터에서 백업을 자주 내보내세요`, 7000);
     else if (!FS.paths().length) { S.ui.sideTab = 'sync'; S.ui.sideOpen = true; applyLayout(); Side.render(); }
     if (!S.secrets.apiKey && S.settings.provider === 'anthropic') setTimeout(() => UI.toast('설정(⚙) → API 에서 Anthropic API 키를 넣어 주세요', 6000), 600);
+    FX.firstRun().catch(() => {});   // 환율 기록이 없으면(첫 실행) 한 번만 받아 기록 — 실패해도 조용히 기본값 사용
     window.__ready = Date.now() - t0;
   } catch (e) {
     console.error(e);
