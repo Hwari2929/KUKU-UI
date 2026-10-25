@@ -75,7 +75,8 @@ async function runTurn(chat, text, { signal } = {}) {
       const msgs = Chats.api(chat); const inEst = sysTok + msgTokens(msgs);
       if (inEst > ctxMax * 0.92) { addLocal(chat, `대화가 모델 한도(${fmtN(ctxMax)} 토큰)에 가까워 중단했습니다. 새 대화를 시작하세요. (/요약 으로 먼저 정리할 수 있습니다)`, 'error'); st.stop = 'ctx'; break; }
       const worst = estimateCost(model, inEst, 0, Math.min(2000, S.settings.maxTokens));
-      const pre = Budget.precheck(worst); if (!pre.ok) { addLocal(chat, '⛔ ' + pre.msg, 'error'); st.stop = 'budget'; break; }
+      // OpenAI 호환은 Anthropic 크레딧과 무관 → 크레딧 검사는 건너뜀 (한 턴 비용 상한만 적용)
+      const pre = LLM.provider === 'openai' ? { ok: true, level: 'ok', msg: '' } : Budget.precheck(worst); if (!pre.ok) { addLocal(chat, '⛔ ' + pre.msg, 'error'); st.stop = 'budget'; break; }
       if (st.cost >= S.settings.budget.turnCapUSD && iter > 1) { addLocal(chat, `⏸ 이번 턴 비용이 한도 ${fmtUSD(S.settings.budget.turnCapUSD)}에 도달해 멈췄습니다 (${fmtUSD(st.cost)}). 계속하려면 "계속" 이라고 보내거나 설정에서 한도를 올리세요.`, 'notice'); st.stop = 'turncap'; break; }
       live.iter = iter; live.text = ''; live.status = 'wait'; live.note = ''; live.usage = null; live.tools = live.tools.filter((t) => t.done); push();
       let r;

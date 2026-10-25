@@ -23,8 +23,8 @@ const calls = [];
 let script = [];
 global.fetch = async (url, opts = {}) => { calls.push({ url, opts, body: opts.body ? JSON.parse(opts.body) : null }); const s = script.shift(); if (typeof s === 'function') return s(opts); return s; };
 const load = require('./load');
-const X = load(['00_util.js', '10_store.js', '20_text.js', '30_gh.js', '40_llm.js'], { fetch: (...a) => global.fetch(...a) }, 'LLM, Ledger, Budget, FX, loadSettings, altUSD, costOf, priceFor, buildBody, anthropicStream, openaiStream, toOpenAIMessages, normUsage, estimateCost, ApiError, zeroUsage');
-const { S, LLM, Ledger, Budget, FX, loadSettings, altUSD, costOf, buildBody, anthropicStream, openaiStream } = X;
+const X = load(['00_util.js', '10_store.js', '20_text.js', '30_gh.js', '40_llm.js'], { fetch: (...a) => global.fetch(...a) }, 'LLM, Ledger, Budget, FX, OPENAI_PRESETS, isOpenRouter, loadSettings, altUSD, costOf, priceFor, buildBody, anthropicStream, openaiStream, toOpenAIMessages, normUsage, estimateCost, ApiError, zeroUsage');
+const { S, LLM, Ledger, Budget, FX, OPENAI_PRESETS, isOpenRouter, loadSettings, altUSD, costOf, buildBody, anthropicStream, openaiStream } = X;
 (async () => {
   S.secrets.apiKey = 'sk-test'; S.settings.budget.anchorUSD = 100; S.settings.budget.anchorTs = 0;
   // 비용: sonnet 5.5  in 1000*2 + cw5 2000*2.5 + cr 10000*0.1 + out 500*10 = 2000+5000+1000+5000 = 13000 /1e6
@@ -80,6 +80,15 @@ const { S, LLM, Ledger, Budget, FX, loadSettings, altUSD, costOf, buildBody, ant
   eq(r.content, [{ type: 'text', text: '안녕' }, { type: 'tool_use', id: 'c1', name: 'search', input: { q: '린' } }]); eq(r.stop_reason, 'tool_use'); eq(r.usage, { input: 600, output: 50, cacheRead: 400, cw5: 0, cw1h: 0 });
   eq(calls[0].body.messages.map((m) => m.role), ['system', 'user', 'assistant', 'tool']); eq(calls[0].body.tools[0].function.name, 'search'); eq(calls[0].url, 'https://api.openai.com/v1/chat/completions'); ok(calls[0].opts.headers.authorization === 'Bearer ok');
   near(costOf('gpt', r.usage, 'openai').total, (600 * 1 + 400 * 0.5 + 50 * 2) * 1e-6, 'openai cost');
+  // OpenRouter 프리셋: 주소/모델/단가, usage.include 요청, 실제 청구액(usage.cost) 우선, Anthropic 장부와 분리
+  { const pr = OPENAI_PRESETS.openrouter; eq([pr.base, pr.model, pr.in, pr.out, pr.cr], ['https://openrouter.ai/api/v1', 'google/gemini-4-argon', 2, 10, 0.1]); ok(isOpenRouter(pr.base) && !isOpenRouter('https://api.openai.com/v1') && !isOpenRouter('https://evil.com/openrouter.ai'));
+    Object.assign(S.settings.openai, { base: pr.base, model: pr.model, in: pr.in, out: pr.out, cr: pr.cr }); S.settings.provider = 'openai';
+    const oev2 = [{ choices: [{ delta: { content: '응' } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }, { choices: [], usage: { prompt_tokens: 1000, completion_tokens: 100, prompt_tokens_details: { cached_tokens: 500 }, cost: 0.0042 } }];
+    script = [osse(oev2)]; calls.length = 0; r = await LLM.stream({ sys: [{ text: 'S' }], tools: [], messages: [{ role: 'user', content: 'q' }], maxTokens: 50 });
+    eq(calls[0].url, 'https://openrouter.ai/api/v1/chat/completions'); eq(calls[0].body.model, 'google/gemini-4-argon'); eq(calls[0].body.usage, { include: true }); eq(r.usage.extCost, 0.0042); eq(r.usage.cacheRead, 500);
+    near(costOf('m', { ...r.usage, extCost: undefined }, 'openai').total, (500 * 2 + 500 * 0.1 + 100 * 10) * 1e-6, '프리셋 단가 계산'); near(costOf('m', r.usage, 'openai').total, 0.0042, '실제 청구액 우선');
+    const before = Budget.remaining(); const e = await Ledger.add({ chatId: 'c', turnId: 't', model: 'google/gemini-4-argon', provider: 'openai', usage: r.usage }); near(e.cost, 0.0042); near(Budget.remaining(), before, 'OpenRouter 는 Anthropic 잔액을 깎지 않음'); near(Budget.externalSince().cost, 0.0042);
+    near(X.estimateCost('m', 1000, 0, 100), (1000 * 2 + 100 * 10) * 1e-6, 'openai 어림 비용'); S.settings.provider = 'anthropic'; }
   // count_tokens
   S.settings.provider = 'anthropic'; script = [{ ok: true, status: 200, headers: new Map(), json: async () => ({ input_tokens: 1234 }) }]; calls.length = 0;
   const ct = await LLM.count({ model: 'claude-sonnet-5-5', sys: [{ text: 'x', cache: true }], tools: [], messages: [{ role: 'user', content: 'q' }] }); eq(ct, { tokens: 1234, approx: false }); ok(calls[0].url.endsWith('/v1/messages/count_tokens') && !('max_tokens' in calls[0].body) && !('stream' in calls[0].body), 'count body');

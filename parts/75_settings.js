@@ -12,14 +12,15 @@ const Settings = {
     const tabs = [['api', 'API'], ['behave', '동작'], ['gh', 'GitHub'], ['rules', '쓰기 규칙'], ['data', '데이터']];
     const html = `<nav class="tabs" style="margin:-4px -4px 12px;border-radius:10px;overflow:hidden">${tabs.map(([t, l]) => `<button data-act="setTab" data-t="${t}" class="${this.tab === t ? 'on' : ''}">${l}</button>`).join('')}</nav>
     <section class="sset ${this.tab === 'api' ? 'on' : ''}" data-s="api">
-      ${fr('sProv', '제공자', `<select id="sProv"><option value="anthropic" ${s.provider === 'anthropic' ? 'selected' : ''}>Anthropic (권장)</option><option value="openai" ${s.provider === 'openai' ? 'selected' : ''}>OpenAI 호환 (형식상)</option></select>`)}
+      ${fr('sProv', '제공자', `<select id="sProv"><option value="anthropic" ${s.provider === 'anthropic' ? 'selected' : ''}>Anthropic (권장)</option><option value="openai" ${s.provider === 'openai' ? 'selected' : ''}>OpenAI 호환 · OpenRouter</option></select>`)}
       <div class="sect">Anthropic</div>
       ${fr('sKey', 'API 키', `<div class="inl"><input type="password" id="sKey" value="${esc(k.apiKey)}" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="sm" data-act="showKey" type="button">보기</button></div>`, '이 기기의 브라우저 저장소에만 보관됩니다 (백업에는 기본으로 빠짐).')}
       ${fr('sBase', '주소', tx('sBase', s.anthropicBase), '기본값 https://api.anthropic.com')}
       ${fr('sModel', '기본 모델', `<select id="sModel">${modelOpts(s.model)}</select>`, '대화마다, 스킬마다 따로 지정할 수도 있어요.')}
       <div class="inl" style="margin:6px 0"><button class="sm" data-act="keyTest">키 · 모델 목록 확인</button><span id="keyRes" class="xs muted"></span></div>
-      <div class="sect">OpenAI 호환 <span class="xs muted">(지금은 쓰지 않아도 됨)</span></div>
-      ${fr('sOKey', 'API 키', tx('sOKey', k.openaiKey, '', 'password'))}${fr('sOBase', '주소', tx('sOBase', s.openai.base))}${fr('sOModel', '모델', tx('sOModel', s.openai.model))}${fr('sOIn', '입력 단가 (USD/1M)', tx('sOIn', s.openai.in))}${fr('sOOut', '출력 단가 (USD/1M)', tx('sOOut', s.openai.out), '단가를 넣어야 장부에 비용이 잡힙니다. 캐시·도구 동작은 Anthropic 쪽만 완전 지원.')}
+      <div class="sect">OpenAI 호환 · OpenRouter <span class="xs muted">(쓰지 않아도 됨)</span></div>
+      <div class="inl" style="margin:4px 0 8px"><button class="sm" type="button" data-act="oPreset" data-p="openrouter">프리셋: ${esc(OPENAI_PRESETS.openrouter.label)}</button><span class="xs muted">누르면 아래 칸이 채워지고 제공자가 바뀝니다 (저장해야 적용)</span></div>
+      ${fr('sOKey', 'API 키', tx('sOKey', k.openaiKey, isOpenRouter(s.openai.base) ? 'sk-or-…' : '', 'password'), 'OpenRouter 키는 openrouter.ai/keys 에서 발급합니다.')}${fr('sOBase', '주소', tx('sOBase', s.openai.base))}${fr('sOModel', '모델', tx('sOModel', s.openai.model))}${fr('sOIn', '입력 단가 (USD/1M)', tx('sOIn', s.openai.in))}${fr('sOCr', '캐시 읽기 단가 (USD/1M)', tx('sOCr', s.openai.cr == null ? '' : s.openai.cr, '비우면 입력 단가의 절반'))}${fr('sOOut', '출력 단가 (USD/1M)', tx('sOOut', s.openai.out), '단가를 넣어야 장부에 비용이 잡힙니다. OpenRouter 는 응답에 실제 청구액이 와서 그 값을 우선 씁니다. OpenAI 호환 쪽 사용분은 Anthropic 남은 크레딧에서 빠지지 않습니다.')}
     </section>
     <section class="sset ${this.tab === 'behave' ? 'on' : ''}" data-s="behave">
       ${fr('sMax', '최대 출력 토큰', tx('sMax', s.maxTokens), '한 번의 답변 길이 상한. 장면 스크립트는 4000~8000이면 충분.')}
@@ -65,7 +66,7 @@ const Settings = {
     const v = (id) => (m.body.querySelector('#' + id) || {}).value; const c = (id) => !!(m.body.querySelector('#' + id) || {}).checked; const n = (id, d) => { const x = num(v(id)); return Number.isFinite(x) ? x : d; };
     const s = S.settings, k = S.secrets, g = s.gh;
     s.provider = v('sProv'); k.apiKey = v('sKey').trim(); s.anthropicBase = v('sBase').trim() || DEFAULT_SETTINGS.anthropicBase; s.model = v('sModel');
-    k.openaiKey = v('sOKey').trim(); s.openai.base = v('sOBase').trim(); s.openai.model = v('sOModel').trim(); s.openai.in = n('sOIn', 0); s.openai.out = n('sOOut', 0);
+    k.openaiKey = v('sOKey').trim(); s.openai.base = v('sOBase').trim(); s.openai.model = v('sOModel').trim(); s.openai.in = n('sOIn', 0); s.openai.out = n('sOOut', 0); { const cr = v('sOCr').trim(); s.openai.cr = cr === '' || !Number.isFinite(num(cr)) ? null : num(cr); }
     s.maxTokens = Math.max(256, Math.round(n('sMax', 8000))); s.temperature = n('sTemp', 1); s.cacheTTL = v('sTTL'); s.maxIters = Math.max(1, Math.round(n('sIters', 10))); s.keepToolTurns = Math.max(1, Math.round(n('sKeep', 2))); s.trimAboveTokens = Math.max(0, Math.round(n('sTrim', 40000))); s.readMaxChars = Math.max(1000, Math.round(n('sRead', 12000)));
     s.includeIndex = c('sIdx'); s.enterSends = c('sEnter'); s.autoApprove = c('sAuto'); s.pinned = lines(v('sPin'));
     const oldGh = JSON.stringify([g.owner, g.repo, g.branch]);
@@ -110,3 +111,10 @@ ACT.bkImport = () => {
 };
 ACT.wipeFiles = async () => { if (!(await dlg.confirm('문서 캐시를 모두 지웁니다. 푸시하지 않은 변경은 사라집니다.', { danger: true, ok: '지우기' }))) return; FS.map.clear(); await DB.clear('files'); S.ui.open = []; S.ui.cur = null; S.sync.lastHead = null; await saveSync(); Pending.rejectAll(); IDX.dirty = true; Ed.renderAll(); Side.render(); renderTop(); UI.toast('지웠습니다. 동기화 탭에서 다시 받으세요.'); };
 ACT.wipeAll = async () => { if (!(await dlg.confirm('설정, API 키, 문서, 대화, 비용 기록까지 전부 지웁니다. 되돌릴 수 없습니다.', { danger: true, ok: '모두 지우기' }))) return; for (const st of DB.STORES) await DB.clear(st); try { localStorage.clear(); } catch (e) {} location.reload(); };
+
+ACT.oPreset = (t) => {
+  const pr = OPENAI_PRESETS[t.dataset.p]; const m = t.closest('.modal'); if (!pr || !m) return; const set = (id, v) => { const el = m.querySelector('#' + id); if (el) el.value = v; };
+  set('sProv', 'openai'); set('sOBase', pr.base); set('sOModel', pr.model); set('sOIn', pr.in); set('sOOut', pr.out); set('sOCr', pr.cr);
+  const k = m.querySelector('#sOKey'); if (k) { k.placeholder = pr.keyHint || ''; if (!k.value) k.focus(); }
+  UI.toast(`${pr.label} 값을 채웠어요. API 키를 넣고 저장하세요.`);
+};

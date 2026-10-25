@@ -32,8 +32,13 @@ const addUsage = (a, b) => ({ input: a.input + b.input, output: a.output + b.out
 function costOf(model, u, provider = 'anthropic') {
   const sc = S.settings.budget.costScale || 1, K = 1e-6;
   if (provider === 'openai') {
-    const o = S.settings.openai; const ci = (o.in || 0), co = (o.out || 0);
-    const c = { in: u.input * ci * K * sc, cw5: 0, cw1h: 0, cr: u.cacheRead * ci * 0.5 * K * sc, out: u.output * co * K * sc }; c.total = c.in + c.cr + c.out; c.guess = !(ci || co); return c;
+    const o = S.settings.openai; const ci = (o.in || 0), co = (o.out || 0), cc = (o.cr != null && o.cr !== '' ? +o.cr : ci * 0.5);
+    const c = { in: u.input * ci * K * sc, cw5: 0, cw1h: 0, cr: u.cacheRead * cc * K * sc, out: u.output * co * K * sc }; c.total = c.in + c.cr + c.out; c.guess = !(ci || co);
+    if (typeof u.extCost === 'number' && u.extCost >= 0) {   // OpenRouter 가 알려준 실제 청구액이 있으면 그것을 기준으로 (항목별 비율만 단가표로 나눔)
+      const t = c.total; if (t > 0) { const f = u.extCost / t; c.in *= f; c.cr *= f; c.out *= f; } else { c.in = 0; c.cr = 0; c.out = u.extCost; }
+      c.total = u.extCost; c.guess = false;
+    }
+    return c;
   }
   const prompt = u.input + u.cacheRead + u.cw5 + u.cw1h;
   const { p, guess } = priceFor(model, prompt);
@@ -45,7 +50,9 @@ function costOf(model, u, provider = 'anthropic') {
 }
 // 호출 전 어림 비용: 입력 토큰 수, 그중 캐시에서 읽힐 것으로 보는 양
 function estimateCost(model, inTokens, cachedTokens = 0, outTokens = 0) {
-  const { p } = priceFor(model, inTokens), K = 1e-6, sc = S.settings.budget.costScale || 1;
+  const K = 1e-6, sc = S.settings.budget.costScale || 1;
+  if (S.settings.provider === 'openai') { const o = S.settings.openai, ci = o.in || 0, cc = (o.cr != null && o.cr !== '' ? +o.cr : ci * 0.5); return (Math.max(0, inTokens - cachedTokens) * ci + cachedTokens * cc + outTokens * (o.out || 0)) * K * sc; }
+  const { p } = priceFor(model, inTokens);
   const fresh = Math.max(0, inTokens - cachedTokens);
   return (fresh * p.in + cachedTokens * p.cr + outTokens * p.out) * K * sc;
 }
@@ -203,6 +210,7 @@ function toOpenAIMessages(sys, messages) {
 async function openaiStream(req, cb = {}) {
   const o = S.settings.openai; if (!S.secrets.openaiKey) throw new ApiError('OpenAI 호환 API 키가 없습니다 (설정 → API).', { kind: 'nokey' });
   const body = { model: o.model, messages: toOpenAIMessages(req.sys, req.messages), stream: true, stream_options: { include_usage: true }, max_tokens: req.maxTokens };
+  if (isOpenRouter(o.base)) body.usage = { include: true };   // OpenRouter: 마지막 청크에 실제 청구액(usage.cost)을 포함
   if (req.tools && req.tools.length) body.tools = req.tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } }));
   if (typeof req.temperature === 'number' && req.temperature !== 1) body.temperature = req.temperature;
   const t0 = Date.now();
@@ -213,7 +221,7 @@ async function openaiStream(req, cb = {}) {
     for await (const { data } of sseEvents(res, cb.signal)) {
       if (data.trim() === '[DONE]') break; let d; try { d = JSON.parse(data); } catch (e) { continue; }
       id = d.id || id;
-      if (d.usage) { const cached = (d.usage.prompt_tokens_details && d.usage.prompt_tokens_details.cached_tokens) || 0; usage = { input: Math.max(0, (d.usage.prompt_tokens || 0) - cached), output: d.usage.completion_tokens || 0, cacheRead: cached, cw5: 0, cw1h: 0 }; cb.onUsage && cb.onUsage({ ...usage }); }
+      if (d.usage) { const cached = (d.usage.prompt_tokens_details && d.usage.prompt_tokens_details.cached_tokens) || 0; usage = { input: Math.max(0, (d.usage.prompt_tokens || 0) - cached), output: d.usage.completion_tokens || 0, cacheRead: cached, cw5: 0, cw1h: 0 }; if (typeof d.usage.cost === 'number') usage.extCost = d.usage.cost; cb.onUsage && cb.onUsage({ ...usage }); }
       const ch = d.choices && d.choices[0]; if (!ch) continue;
       if (ch.delta && ch.delta.content) { text += ch.delta.content; cb.onText && cb.onText(ch.delta.content, text); }
       for (const tc of (ch.delta && ch.delta.tool_calls) || []) { const t = calls[tc.index] || (calls[tc.index] = { id: '', name: '', args: '' }); if (tc.id) t.id = tc.id; if (tc.function && tc.function.name) { t.name += tc.function.name; if (cb.onToolStart && t.name === tc.function.name) cb.onToolStart({ type: 'tool_use', name: t.name }); } if (tc.function && tc.function.arguments) t.args += tc.function.arguments; }
@@ -301,7 +309,9 @@ const Ledger = {
 const Budget = {
   get cfg() { return S.settings.budget; },
   creditUSD() { return this.cfg.creditUSD; },
-  spentSince() { return Ledger.since(this.cfg.anchorTs).cost; },
+  // Anthropic 크레딧에서 빠지는 것만 센다 — OpenRouter 등 OpenAI 호환 호출은 별도 결제라 제외
+  spentSince() { return Ledger.sum(S.ledger.filter((e) => e.ts >= this.cfg.anchorTs && e.provider !== 'openai')).cost; },
+  externalSince() { return Ledger.sum(S.ledger.filter((e) => e.ts >= this.cfg.anchorTs && e.provider === 'openai')); },
   remaining() { return this.cfg.anchorUSD - this.spentSince(); },
   usedUSD() { return Math.max(0, this.creditUSD() - this.remaining()); },
   usedPct() { const c = this.creditUSD(); return c > 0 ? (this.usedUSD() / c) * 100 : 0; },

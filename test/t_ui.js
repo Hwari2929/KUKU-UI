@@ -109,6 +109,12 @@ const mockFetch = async (url, opts = {}) => {
   ok(repo.files.get('docs/VOICES.md') === 'REMOTE' || repo.files.has('drafts/장면/new.md'), '리포에 반영'); ok(repo.files.has('drafts/장면/new.md'), '새 파일이 리포에');
   // ── 설정 저장 · 백업
   $('#btnSettings').click(); await sleep(40); ok($('.modal #sKey').value === 'sk-test'); $('.modal #sTTL').value = '1h'; [...$$('.modal footer button')].find((b) => b.textContent === '저장').click(); await sleep(60); eq(ev('S.settings.cacheTTL'), '1h');
+  // OpenRouter 프리셋 버튼: 칸 채움 → 저장 → 설정 반영
+  $('#btnSettings').click(); await sleep(40); $('.modal [data-act=oPreset]').click(); await sleep(20);
+  eq([$('.modal #sProv').value, $('.modal #sOBase').value, $('.modal #sOModel').value, $('.modal #sOIn').value, $('.modal #sOOut').value, $('.modal #sOCr').value], ['openai', 'https://openrouter.ai/api/v1', 'google/gemini-4-argon', '2', '10', '0.1']);
+  $('.modal #sOKey').value = 'sk-or-test'; [...$$('.modal footer button')].find((b) => b.textContent === '저장').click(); await sleep(60);
+  eq(ev('[S.settings.provider, S.settings.openai.model, S.settings.openai.cr, S.secrets.openaiKey]'), ['openai', 'google/gemini-4-argon', 0.1, 'sk-or-test']); eq(ev('LLM.modelId'), 'google/gemini-4-argon');
+  ev("S.settings.provider='anthropic'; saveSettings()");
   const bk = await ev('Settings.backup(false)'); ok(bk.files.length >= 5 && bk.chats.length >= 1 && bk.ledger.length >= 4 && !bk.secrets, '백업 내용');
   ok(errors.length === 0, '콘솔 오류 없음: ' + errors.join('\n').slice(0, 800));
   console.log(`ui OK (${n} assertions)`); process.exit(0);

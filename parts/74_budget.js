@@ -34,6 +34,7 @@ const BudgetUI = {
     <div class="xs muted" style="display:flex;justify-content:space-between"><span>0</span><span>경고 ${cfg.warnPct}% · 중단 ${cfg.stopPct}%</span><span>${usd(b.creditUSD)}</span></div>
     ${lv !== 'ok' ? `<div class="banner ${lv === 'stop' ? 'err' : 'warn'}" style="border-radius:10px;margin-top:10px">${lv === 'stop' ? '⛔ 예산 한도에 도달해 AI 호출이 막혀 있습니다. 보정 · 설정 탭에서 한도를 조정하거나 잔액을 보정하세요.' : '⚠ 경고 구간입니다. 남은 예산을 확인하세요.'}</div>` : ''}
     <div class="sect">전망</div>
+    ${(() => { const x = Budget.externalSince(); return x.n ? `<div class="card flat sm">OpenAI 호환(OpenRouter 등) 사용 <b>${usd(x.cost)}</b><span class="krw"> (${fmtKRW(x.cost)})</span> · ${x.n}회 — 별도 결제라 위 <b>남은 크레딧에는 반영하지 않습니다</b>. (오늘·이 대화·표의 합계에는 포함)</div>` : ''; })()}
     <div class="card flat sm">평균 한 턴 <b>${usd(b.avgTurn)}</b><span class="krw"> (${fmtKRW(b.avgTurn)})</span> — 최근 20턴 기준${b.runway != null ? ` · 남은 예산으로 약 <b>${fmtN(b.runway)}턴</b> 더 가능` : ' · 아직 기록이 없습니다'}.<br>
       <span class="muted">장부 계산: 보정 기준점(${fmtDT(cfg.anchorTs)}) 잔액 ${usd(cfg.anchorUSD)} − 그 이후 지출 ${usd(spentSince)} = ${usd(b.remaining)}. 콘솔 잔액과 어긋나면 <a href="#" data-act="budTab" data-t="cfg">보정</a> 하세요.</span></div>
     <div class="sect">토큰 종류별 누적 (전체 ${fmtN(tot.n)}회 호출)</div>

@@ -45,10 +45,15 @@ const DEFAULT_MODELS = {
   'claude-haiku-5-5': { label: 'Haiku 5.5', in: 0.10, out: 0.50, cw5: 0.125, cw1h: 0.20, cr: 0.01, ctx: 200000, tier: { over: 100000, in: 0.50, out: 2.50, cw5: 0.625, cw1h: 1, cr: 0.05 } },
   'claude-fable-5-1': { label: 'Fable 5.1', in: 10, out: 50, cw5: 12.5, cw1h: 20, cr: 0.25, ctx: 1000000 },
 };
+// OpenAI 호환 쪽 프리셋 (단가 USD/1M — OpenRouter 모델 페이지 기준, 2026-10-25 확인). cr = 캐시 읽기 단가
+const OPENAI_PRESETS = {
+  openrouter: { label: 'OpenRouter · Gemini 4 Argon', base: 'https://openrouter.ai/api/v1', model: 'google/gemini-4-argon', in: 2, out: 10, cr: 0.10, keyHint: 'sk-or-…' },
+};
+const isOpenRouter = (base) => /(^|\/\/)([\w-]+\.)*openrouter\.ai(\/|$)/i.test(base || '');
 const DEFAULT_SETTINGS = {
   provider: 'anthropic',
   anthropicBase: 'https://api.anthropic.com',
-  openai: { base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', in: 0, out: 0 },   // 형식상 구현 — 단가(USD/1M)를 직접 넣으면 장부에 반영
+  openai: { base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', in: 0, out: 0, cr: null },   // 형식상 구현 — 단가(USD/1M)를 직접 넣으면 장부에 반영
   model: 'claude-sonnet-5-5',
   maxTokens: 8000,
   temperature: 1,

@@ -37,5 +37,6 @@ node test/t_gh.js && node test/t_llm.js && node test/t_tools.js && node test/t_a
 
 - 남은 크레딧은 공식 조회 API 가 없어 **장부 기준**으로 계산하고, 콘솔 잔액으로 보정합니다.
 - 예산은 **달러(USD) 기준**(기본 총 크레딧 100달러)이고 원화는 보조 표시입니다(설정에서 끄기 가능). 환율은 첫 실행 때 한 번 받아 시각·출처와 함께 기록하고, 예산 패널 → 설정의 "지금 갱신"으로 다시 받습니다. 받기에 실패하면 마지막 값을 계속 쓰며 직접 입력도 됩니다.
+- OpenRouter: 설정 → API → "프리셋: OpenRouter · Gemini 4 Argon" 버튼으로 주소·모델(`google/gemini-4-argon`)·단가가 채워집니다. OpenRouter 사용분은 응답의 실제 청구액으로 기록하고, Anthropic 남은 크레딧에서는 빼지 않습니다.
 - 모델 단가는 `parts/00_util.js` 의 `DEFAULT_MODELS` (공식 가격표 2026-10-25 확인). 앱의 예산 패널에서 고칠 수 있습니다.
 - AI 의 쓰기는 항상 승인 대기열을 거칩니다. 원본 설정 문서(`lore/인물/*.md` 등)는 쓰기 금지 규칙이 기본 적용됩니다.
