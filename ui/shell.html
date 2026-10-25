@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="color-scheme" content="light dark">
+<title>ERTES Studio</title>
+<style>
+/*__CSS__*/
+</style>
+</head>
+<body>
+<div id="app" class="mode-split side-open">
+  <header id="top">
+    <button id="btnSide" class="ib ghost" data-act="toggleSide" title="사이드바 (⌘B)">☰</button>
+    <div class="brand">ERTES <b>Studio</b></div>
+    <nav class="seg" id="modeSeg">
+      <button data-act="mode" data-mode="edit">편집</button>
+      <button data-act="mode" data-mode="split">분할</button>
+      <button data-act="mode" data-mode="chat">대화</button>
+    </nav>
+    <div class="grow"></div>
+    <button id="btnPending" class="chip pend hidden" data-act="openPending">승인 대기 <b>0</b></button>
+    <button id="btnSync" class="chip" data-act="syncMenu">⇅ <span>동기화</span></button>
+    <button id="btnBudget" class="chip budget" data-act="openBudget" title="예산 패널">…</button>
+    <button id="btnTheme" class="ib ghost" data-act="theme" title="테마">◐</button>
+    <button id="btnSettings" class="ib ghost" data-act="openSettings" title="설정">⚙</button>
+  </header>
+  <div id="progress"></div><div id="progText" class="hidden"></div>
+  <main id="main">
+    <aside id="side">
+      <nav class="tabs" id="sideTabs">
+        <button data-act="sideTab" data-tab="files">파일</button>
+        <button data-act="sideTab" data-tab="search">검색</button>
+        <button data-act="sideTab" data-tab="info">정보</button>
+        <button data-act="sideTab" data-tab="sync">동기화</button>
+      </nav>
+      <div class="sidepane" id="sidePane"></div>
+    </aside>
+    <section id="editorPane">
+      <div id="tabbar"></div>
+      <div id="edTools"></div>
+      <div id="edBody"></div>
+      <div id="lintbar" class="hidden"></div>
+      <div id="statusbar"></div>
+    </section>
+    <div id="splitter"></div>
+    <section id="chatPane">
+      <div id="chatHead"></div>
+      <div id="msgs"></div>
+      <div id="composer"></div>
+    </section>
+  </main>
+</div>
+<div id="modalRoot"></div>
+<div id="toasts"></div>
+<noscript>이 도구는 JavaScript 가 필요합니다.</noscript>
+<script>
+/*__JS__*/
+</script>
+</body>
+</html>
