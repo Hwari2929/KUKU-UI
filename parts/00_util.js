@@ -33,9 +33,14 @@ function estTokens(t) {
   return Math.ceil(h * 1.0 + o / 3.2);
 }
 const normPath = (p) => String(p || '').replace(/\\/g, '/').replace(/^\.?\/+/, '').replace(/\/{2,}/g, '/').trim();
+/* ── 작업공간: 'lore'(ERTES 설정집) / 'self'(이 도구 자신의 소스 = KUKU-UI 리포, 로컬 경로 접두사 studio-src/) ── */
+const SELF_PREFIX = 'studio-src/';
+const wsNow = () => (S.ui.ws === 'self' ? 'self' : 'lore');
+const inSelf = (p) => String(p).startsWith(SELF_PREFIX);
+const inWs = (p) => (wsNow() === 'self') === inSelf(p);
 const baseName = (p) => p.split('/').pop();
 const titleOf = (p) => baseName(p).replace(/\.(md|txt|markdown)$/i, '');
-const isText = (p) => /\.(md|markdown|txt|json|csv|yml|yaml)$/i.test(p);
+const isText = (p) => /\.(md|markdown|txt|json|csv|yml|yaml|js|mjs|cjs|css|html)$/i.test(p);
 const isMd = (p) => /\.(md|markdown|txt)$/i.test(p);
 
 /* ── 모델 가격 (USD / 1M tokens). 출처: platform.claude.com 가격표 (2026-10-25 확인). 설정에서 고칠 수 있다. */
@@ -91,6 +96,11 @@ const DEFAULT_SETTINGS = {
   writeAllow: ['lore/인물/확장/', 'lore/캠페인/', 'drafts/', 'studio/'],
   writeDeny: ['lore/인물/*.md', 'lore/세력/', 'lore/지역/', 'lore/_틀/', 'src/', '.git/'],
   pinned: ['CLAUDE.md'],
+  self: {   // 자가개선: 이 도구의 소스 리포. AI 작업은 base(main)가 아니라 branch(작업 브랜치)에만 올라간다.
+    owner: 'Hwari2929', repo: 'KUKU-UI', base: 'main', branch: 'self-improve',
+    includes: ['parts/', 'ui/', 'skills/', 'test/', 'build.js', 'gen_skills.js', 'package.json', 'README.md', 'CLAUDE.md'],
+    excludes: ['parts/45_skills.gen.js'], exts: ['.js', '.css', '.html', '.md', '.json'], maxKB: 400,
+  },
   models: DEFAULT_MODELS,
   budget: { creditUSD: 100, krwPerUSD: 1400, showKRW: true, fx: { rate: null, ts: null, date: '', source: '' }, anchorUSD: null, anchorTs: null, warnPct: 80, stopPct: 97, reserveUSD: 0.5, turnCapUSD: 1.0, costScale: 1, calibLog: [] },
 };
@@ -100,7 +110,7 @@ const S = {
   chats: [], ledger: [], pending: [], snaps: [], batches: [],
   sync: { lastHead: null, lastPull: null, branch: null },
   run: { busy: false, abort: null, chatId: null },
-  ui: { open: [], cur: null, openDirs: {}, sideTab: 'files', mode: 'split', chatId: null, theme: 'auto', sideOpen: true, view: 'edit', fontSize: 16, editorFont: 'sans', chatW: 460, includeDoc: true },
+  ui: { open: [], cur: null, openDirs: {}, sideTab: 'files', mode: 'split', chatId: null, theme: 'auto', ws: 'lore', sideOpen: true, view: 'edit', fontSize: 16, editorFont: 'sans', chatW: 460, includeDoc: true },
 };
 // UI 가 덮어쓰는 훅 (순수 로직 부분이 DOM 없이도 돌도록)
 const UI = {

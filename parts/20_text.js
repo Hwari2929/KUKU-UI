@@ -7,15 +7,16 @@ function parseLinks(text) {
   while ((m = re.exec(text))) out.push({ embed: !!m[1], target: m[2].trim(), heading: m[3] ? m[3].trim() : '', alias: m[4] ? m[4].trim() : '', index: m.index });
   return out;
 }
+const docFilter = () => (wsNow() === 'self' ? isText : isMd);   // 자가개선에서는 코드 파일도 색인·검색 대상
 const IDX = { dirty: true, titles: new Map(), out: new Map(), back: new Map() };
 function ensureIndex() {
   if (!IDX.dirty) return IDX;
   IDX.titles = new Map(); IDX.out = new Map(); IDX.back = new Map();
-  const paths = FS.paths().filter(isMd);
+  const paths = FS.paths().filter(docFilter());
   for (const p of paths) { const k = titleOf(p).toLowerCase(); if (!IDX.titles.has(k)) IDX.titles.set(k, []); IDX.titles.get(k).push(p); }
   IDX.dirty = false; // resolveName 이 다시 색인을 만들지 않도록 먼저 내림
   for (const p of paths) {
-    const links = parseLinks(FS.read(p) || '').map((l) => { const r = resolveName(l.target); return { ...l, path: r.path }; });
+    const links = (isMd(p) ? parseLinks(FS.read(p) || '') : []).map((l) => { const r = resolveName(l.target); return { ...l, path: r.path }; });
     IDX.out.set(p, links);
     for (const l of links) if (l.path && l.path !== p) { if (!IDX.back.has(l.path)) IDX.back.set(l.path, new Set()); IDX.back.get(l.path).add(p); }
   }
@@ -48,12 +49,28 @@ function outlineOf(text) {
     else if (!fence) { const m = ln.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/); if (m) out.push({ lvl: m[1].length, title: m[2].trim(), line: i + 1, offset: off }); }
     off += ln.length + 1;
   });
+  return finishOutline(out, text);
+}
+function finishOutline(out, text) {
   out.forEach((h, i) => { let end = text.length; for (let j = i + 1; j < out.length; j++) if (out[j].lvl <= h.lvl) { end = out[j].offset; break; } h.end = end; h.size = end - h.offset; });
   return out;
 }
+// 코드 파일 목차: 구획 주석(/* ── 이름 ── */) → 1단계, 최상위 function/class/const → 2단계, ACT.x = → 3단계
+function outlineOfCode(text) {
+  const out = []; let off = 0;
+  text.split('\n').forEach((ln, i) => {
+    let m;
+    if ((m = ln.match(/^\/\*\s*[═─=\-]{2,}\s*(.+?)\s*[═─=\-]*\s*\*\/\s*$/))) out.push({ lvl: 1, title: m[1].trim(), line: i + 1, offset: off });
+    else if ((m = ln.match(/^(?:async\s+)?function\s*\*?\s*([\w$]+)/)) || (m = ln.match(/^class\s+([\w$]+)/)) || (m = ln.match(/^(?:const|let|var)\s+([\w$]+)\s*=/))) out.push({ lvl: 2, title: m[1], line: i + 1, offset: off });
+    else if ((m = ln.match(/^(ACT\.[\w$]+)\s*=/))) out.push({ lvl: 3, title: m[1], line: i + 1, offset: off });
+    off += ln.length + 1;
+  });
+  return finishOutline(out, text);
+}
+const outlineFor = (path, text) => (isMd(path || '') || !isText(path || '') ? outlineOf(text) : (/\.(js|mjs|cjs)$/i.test(path) ? outlineOfCode(text) : []));
 const normH = (s) => String(s).toLowerCase().replace(/[\s\-–—·:()（）\[\]`*_\/,'"“”‘’]/g, '');
-function sectionOf(text, q) {
-  const ol = outlineOf(text); const qn = normH(q); if (!qn) return { ol, h: null, others: [] };
+function sectionOf(text, q, ol0) {
+  const ol = ol0 || outlineOf(text); const qn = normH(q); if (!qn) return { ol, h: null, others: [] };
   const stages = [(h) => normH(h.title) === qn, (h) => normH(h.title).startsWith(qn), (h) => normH(h.title).includes(qn)];
   for (const f of stages) { const hit = ol.filter(f); if (hit.length) return { ol, h: hit[0], text: text.slice(hit[0].offset, hit[0].end), others: hit.slice(1, 6).map((x) => x.title) }; }
   return { ol, h: null, others: [] };
@@ -67,7 +84,7 @@ function searchNotes(query, { folder = '', limit = 8 } = {}) {
   if (!terms.length) return [];
   const res = [];
   for (const p of FS.paths()) {
-    if (!isMd(p)) continue;
+    if (!docFilter()(p)) continue;
     if (folder && !p.startsWith(folder)) continue;
     const text = FS.read(p) || ''; const lower = text.toLowerCase(); const tl = titleOf(p).toLowerCase(); const pl = p.toLowerCase();
     let matched = 0, sum = 0, first = -1; const hits = [];
@@ -79,12 +96,12 @@ function searchNotes(query, { folder = '', limit = 8 } = {}) {
   }
   res.sort((a, b) => b.score - a.score);
   return res.slice(0, limit).map((r) => {
-    const ol = outlineOf(r.text); const snips = []; const seen = new Set();
+    const code = !isMd(r.path); const ol = code ? outlineFor(r.path, r.text) : outlineOf(r.text); const snips = []; const seen = new Set();
     for (const ix of r.hits.sort((a, b) => a - b)) {
       if (snips.length >= 2) break; const hd = headingAt(ol, ix);
       const key = hd ? hd.offset : -1; if (seen.has(key) && snips.length) continue; seen.add(key);
       const s = Math.max(0, ix - 50), e = Math.min(r.text.length, ix + 110);
-      snips.push({ section: hd ? hd.title : '', text: r.text.slice(s, e).replace(/\s+/g, ' ').trim() });
+      snips.push({ section: hd ? hd.title : '', text: (code ? `L${r.text.slice(0, ix).split('\n').length}: ` : '') + r.text.slice(s, e).replace(/\s+/g, ' ').trim() });
     }
     if (!snips.length) snips.push({ section: '', text: r.text.slice(0, 120).replace(/\s+/g, ' ') });
     return { path: r.path, size: r.text.length, snips };
@@ -353,10 +370,17 @@ function matchRule(path, rule) {
   if (rule.includes('*')) { const re = new RegExp('^' + rule.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*/g, '\u0001').replace(/\*/g, '[^/]*').replace(/\u0001/g, '.*') + '$'); return re.test(path); }
   return rule.endsWith('/') ? path.startsWith(rule) : path === rule || path.startsWith(rule + '/');
 }
+const SELF_DENY = ['.git/', '.github/', 'node_modules/', 'parts/45_skills.gen.js', 'ERTES-Studio.html', 'package-lock.json'];
 function canWrite(path) {
   path = normPath(path);
   if (!path || path.includes('..') || /^\//.test(path)) return { ok: false, why: '잘못된 경로' };
-  if (!isText(path)) return { ok: false, why: '텍스트 파일(.md .txt .json)만 쓸 수 있음' };
+  if (!isText(path)) return { ok: false, why: '텍스트 파일(.md .txt .json .js .css .html)만 쓸 수 있음' };
+  if (wsNow() === 'self') {   // 자가개선: studio-src/ 아래만, 생성물·메타 폴더는 금지
+    if (!inSelf(path)) return { ok: false, why: `자가개선 모드에서는 ${SELF_PREFIX} 아래 파일만 쓸 수 있음` };
+    const rel = path.slice(SELF_PREFIX.length); const deny = SELF_DENY.find((r) => matchRule(rel, r));
+    return deny ? { ok: false, why: `쓰기 금지(${deny}) — 생성물이거나 관리용 파일입니다` } : { ok: true };
+  }
+  if (inSelf(path)) return { ok: false, why: `${SELF_PREFIX} 는 자가개선 모드에서만 쓸 수 있음` };
   for (const r of S.settings.writeDeny) if (matchRule(path, r)) return { ok: false, why: `쓰기 금지 규칙(${r})에 걸림 — 원본 설정 문서는 고치지 않고 lore/인물/확장/ 에 새 설정을 적는다` };
   if (!S.settings.writeAllow.some((r) => matchRule(path, r))) return { ok: false, why: `쓰기 허용 폴더가 아님 (허용: ${S.settings.writeAllow.join(', ')})` };
   return { ok: true };

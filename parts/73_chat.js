@@ -40,6 +40,7 @@ const Chat = {
     if (this.stick) this.scrollEnd();
   },
   welcome() {
+    if (wsNow() === 'self') return `<div class="empty"><h3>🛠 자가개선</h3><div>이 도구 자신의 소스(KUKU-UI)를 AI 와 함께 고치는 모드예요. ${FS.paths().length ? `소스 ${FS.paths().length}개를 읽을 수 있어요.` : '먼저 사이드바 <b>동기화</b> 탭에서 소스를 받아 오세요.'}</div><div class="sm" style="margin-top:12px;text-align:left;max-width:420px;margin-left:auto;margin-right:auto">• "예산 패널에 일별 막대그래프 추가" 처럼 원하는 변화를 말해 주세요.<br>• AI 의 수정안은 <b>승인 대기</b>에 쌓이고, 승인하면 이 기기의 소스에 반영돼요.<br>• 동기화 탭에서 <b>빌드 점검 → 미리보기 → 커밋·푸시(작업 브랜치) → PR</b> 순서로 진행합니다. 테스트는 Claude Code/로컬에서 돌려 주세요.</div></div>`;
     const have = FS.paths().length;
     return `<div class="empty"><h3>ERTES 집필 도우미</h3><div>${have ? `문서 ${have}개를 읽을 수 있어요. 질문하면 필요한 문서만 찾아 읽고 답합니다.` : '먼저 사이드바의 <b>동기화</b> 탭에서 GitHub 문서를 받아 오세요.'}</div><div class="sm" style="margin-top:12px;text-align:left;display:inline-block"><b>/</b> 로 시작하면 스킬 선택<br><code>/장면</code> 장면 스크립트 작성 · <code>/확장</code> 인물 확장 문서<br><code>/정합</code> 모순 점검 · <code>/구상</code> 아이디어 · <code>/캠페인</code> 전개<br><code>/검색</code> <code>/읽기</code> <code>/린트</code> 는 크레딧이 들지 않는 로컬 명령</div></div>`;
   },

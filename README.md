@@ -16,12 +16,13 @@
 | `parts/40_llm.js` | Anthropic SSE 클라이언트(프롬프트 캐시), OpenAI 호환(형식상), 비용 계산, 장부, 예산 |
 | `parts/45_skills.gen.js` | `skills/*.md` 에서 자동 생성 (직접 고치지 말 것) |
 | `parts/50_tools.js` | 에이전트 도구(search/read_note/list_notes/write_note/edit_note/lint), 승인 대기열, 스킬, 시스템 프롬프트, 슬래시 명령 |
+| `parts/55_self.js` | 자가개선: 브라우저 안에서 합본 만들기·문법 점검·미리보기 (`build.js` 와 같은 결과) |
 | `parts/60_agent.js` | 대화 저장, 턴 루프, 긴 대화 정리, 중단/오류 처리 |
 | `parts/70_ui_core.js` ~ `76_modals.js` | 화면: 코어(모달·메뉴), 에디터, 사이드바(파일·검색·정보·동기화), 대화창, 예산 패널, 설정, 승인/충돌/기록 |
 | `parts/90_boot.js` | 시작 |
 | `ui/shell.html`, `ui/style.css` | HTML 골격과 스타일 |
 | `skills/*.md` | 내장 스킬(장면·확장·정합·구상·캠페인·대사·요약). 리포의 `studio/skills/*.md` 로 덮어쓸 수 있음 |
-| `test/` | 로직 테스트(`t_text`, `t_gh`, `t_llm`, `t_tools`, `t_agent`)와 jsdom 화면 테스트(`t_ui`) |
+| `test/` | 로직 테스트(`t_text`, `t_gh`, `t_llm`, `t_tools`, `t_agent`, `t_batch`, `t_self`)와 jsdom 화면 테스트(`t_ui`) |
 | `build.js`, `gen_skills.js` | 빌드 스크립트 |
 
 ## 빌드 · 테스트
@@ -29,7 +30,7 @@
 ```
 node build.js            # ERTES-Studio.html 생성
 node test/t_text.js      # 순수 로직 테스트들 (의존성 없음)
-node test/t_gh.js && node test/t_llm.js && node test/t_tools.js && node test/t_agent.js
+node test/t_gh.js && node test/t_llm.js && node test/t_tools.js && node test/t_agent.js && node test/t_batch.js && node test/t_self.js
 # 화면 테스트는 jsdom, fake-indexeddb 가 필요:  npm i jsdom fake-indexeddb  (test/t_ui.js 의 require 경로 참고)
 ```
 
@@ -41,5 +42,11 @@ node test/t_gh.js && node test/t_llm.js && node test/t_tools.js && node test/t_a
 - 모델: Opus 5.5, Sonnet 5.5, 각각의 **배치** 버전, Haiku 5.5. 대화창 아래 모델 선택에서 "… 배치" 를 고르고 보내면 Message Batches API 로 접수됩니다(토큰 단가 50%, 보통 몇 분~몇 시간·최대 24시간). 도구·파일 색인 없이 한 번에 답하는 분석용이고, 접수 정보는 기기에 저장돼 앱을 닫았다 열어도 이어서 확인합니다. 끝나면 대화에 답이 붙고 장부에 반값으로 기록됩니다. 실패·만료는 "다시 보내기".
 - 노력 수준(추론 강도): 대화창의 "노력" 선택(자동/중간/높음/매우 높음) 또는 설정의 기본값. 자동은 아무것도 보내지 않아 모델 기본값(Claude 는 높음)을 따릅니다. Opus/Sonnet 은 `output_config.effort`, OpenRouter 는 `reasoning.effort` 로 전달하며 Haiku 에는 보내지 않습니다.
 - OpenRouter 프리셋은 일반(`google/gemini-4-argon`)과 배치(`google/gemini-4-argon:batch`, 반값) 두 개입니다.
+- **자가개선**: 상단의 "📚 설정집 / 🛠 자가개선" 스위치로 작업공간을 바꿉니다. 자가개선 모드에서는 이 리포(기본 `Hwari2929/KUKU-UI`)를 `studio-src/` 아래로 받아 AI 와 함께 소스를 고칩니다. 설정집 문서와는 완전히 분리되어 서로 보이지 않습니다.
+  - 흐름: 동기화 탭에서 받기 → AI 에게 수정 요청 → 승인 대기열에서 확인 → **빌드 점검**(합본이 문법 오류 없이 만들어지는지)·**미리보기**(새 탭)·**HTML 받기** → 푸시 → **PR 만들기** → GitHub 에서 직접 병합.
+  - 푸시는 작업 브랜치(기본 `self-improve`, 없으면 `main` 에서 따서 만듦)에만 합니다. `main` 에는 절대 직접 올리지 않으며, 병합은 사람이 PR 에서 합니다. 작업 브랜치가 꼬이면 "작업 브랜치 초기화"로 `main` 에 맞춥니다.
+  - AI 는 `build_check` 도구로 스스로 합본 문법을 점검합니다. 자동 승인은 이 모드에서 무시되고, `.git/`·`.github/`·`node_modules/`·`parts/45_skills.gen.js`(생성물)·`ERTES-Studio.html` 등은 쓸 수 없습니다.
+  - 브라우저에서는 `test/` 를 실행할 수 없습니다. 테스트는 PR 을 받아 로컬(또는 Claude Code)에서 `node test/…` 로 돌리세요. 미리보기 탭은 저장소가 분리되어 빈 상태로 열립니다.
+  - 토큰은 Contents + Pull requests 쓰기 권한이 필요합니다. 설정 → 자가개선에서 리포·브랜치를 바꿉니다.
 - 모델 단가는 `parts/00_util.js` 의 `DEFAULT_MODELS` (공식 가격표 2026-10-25 확인). 앱의 예산 패널에서 고칠 수 있습니다.
 - AI 의 쓰기는 항상 승인 대기열을 거칩니다. 원본 설정 문서(`lore/인물/*.md` 등)는 쓰기 금지 규칙이 기본 적용됩니다.

@@ -88,7 +88,7 @@ function applyTheme() {
   r.classList.toggle('nokrw', !S.settings.budget.showKRW); r.style.setProperty('--edfs', (S.ui.fontSize || 16) + 'px'); r.style.setProperty('--chatW', (S.ui.chatW || 460) + 'px');
 }
 function applyLayout() {
-  const a = document.getElementById('app'); a.classList.remove('mode-edit', 'mode-split', 'mode-chat'); a.classList.add('mode-' + (S.ui.mode || 'split')); a.classList.toggle('side-open', !!S.ui.sideOpen);
+  const a = document.getElementById('app'); a.classList.remove('mode-edit', 'mode-split', 'mode-chat'); a.classList.add('mode-' + (S.ui.mode || 'split')); a.classList.toggle('side-open', !!S.ui.sideOpen); a.classList.toggle('ws-self', wsNow() === 'self'); $$('#wsSeg button').forEach((b) => b.classList.toggle('on', b.dataset.ws === wsNow()));
   $$('#modeSeg button').forEach((b) => b.classList.toggle('on', b.dataset.mode === S.ui.mode));
   $$('#sideTabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === S.ui.sideTab));
 }
@@ -111,9 +111,21 @@ function renderTop() {
   bt.innerHTML = `<span>남음 <b>${fmtUSD(b.remaining)}</b></span><span class="muted">${b.pct.toFixed(0)}%</span>`;
   bt.title = `사용 ${fmtUSD(b.used)}${altUSD(b.used)} · 남음 ${fmtUSD(b.remaining)}${altUSD(b.remaining)} (장부 기준)`;
   const p = document.getElementById('btnPending'); p.classList.toggle('hidden', !S.pending.length); p.querySelector('b').textContent = S.pending.length;
-  const ch = FS.changes().length; const sy = document.getElementById('btnSync'); sy.querySelector('span').textContent = ch ? `변경 ${ch}` : '동기화'; sy.style.borderColor = ch ? 'var(--warn)' : '';
+  const ch = FS.changes().length; const sy = document.getElementById('btnSync'); sy.querySelector('span').textContent = (wsNow() === 'self' ? '🛠 ' : '') + (ch ? `변경 ${ch}` : '동기화'); sy.style.borderColor = ch ? 'var(--warn)' : '';
 }
 UI.budget = () => { renderTop(); if (typeof BudgetUI !== 'undefined') BudgetUI.refresh(); if (typeof Chat !== 'undefined') Chat.renderEst(); };
 UI.pending = () => { renderTop(); if (typeof Side !== 'undefined') Side.renderSoon(); if (typeof Ed !== 'undefined') Ed.renderTabs(); if (typeof Appr !== 'undefined') Appr.refresh(); };
 UI.files = () => { renderTop(); if (typeof Side !== 'undefined') Side.renderSoon(); if (typeof Ed !== 'undefined') Ed.afterFilesChange(); };
 ACT.syncMenu = (t) => { S.ui.sideTab = 'sync'; S.ui.sideOpen = true; applyLayout(); Side.render(); };
+
+ACT.ws = (t) => {
+  const to = t.dataset.ws === 'self' ? 'self' : 'lore'; if (to === wsNow()) return;
+  if (S.run.busy) return UI.toast('AI 응답이 끝난 뒤에 바꿔 주세요');
+  S.ui.stash = S.ui.stash || {}; S.ui.stash[wsNow()] = { open: S.ui.open, cur: S.ui.cur };
+  S.ui.ws = to; const st = S.ui.stash[to] || { open: [], cur: null };
+  S.ui.open = (st.open || []).filter((p) => FS.has(p)); S.ui.cur = st.cur && FS.has(st.cur) ? st.cur : S.ui.open[0] || null;
+  IDX.dirty = true; Side.q = ''; Side.sq = ''; Side.off = new Set(); Chat.exact = null;
+  applyLayout(); Ed.renderAll(); Side.render(); Chat.render(); Chat.renderEst(); renderTop(); saveUi();
+  if (to === 'self') UI.toast(FS.paths().length ? '자가개선 모드 — 이 도구의 소스를 AI 와 함께 고칩니다' : '자가개선 모드 — 동기화 탭에서 소스를 먼저 받아 오세요 (main 에서 읽기만 합니다)', 5000);
+  else UI.toast('설정집 모드');
+};

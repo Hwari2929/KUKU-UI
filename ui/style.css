@@ -181,3 +181,6 @@ table.tb{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric
 .help kbd{font-family:var(--mono);background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:0 6px;font-size:12.5px}.help td{padding:3px 10px 3px 0;vertical-align:top}
 @media print{#top,#side,#chatPane{display:none}}
 html.nokrw .krw{display:none!important}.krw{color:var(--muted)}td.krw,th.krw{color:inherit}
+#wsBar{padding:6px 8px 0}#wsBar .seg{width:100%}#wsBar .seg button{flex:1}
+#app.ws-self #top{box-shadow:inset 0 -3px 0 var(--warn)}#app.ws-self #wsBar .seg button.on{background:var(--warn);color:#fff}
+.selfnote{font-size:12.5px;color:var(--muted);line-height:1.5;margin:4px 0}.selfnote b{color:var(--text)}

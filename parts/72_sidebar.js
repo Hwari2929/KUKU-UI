@@ -44,6 +44,7 @@ const Quick = {
   noteOpen(p) { this.recent = [p, ...this.recent.filter((x) => x !== p)].slice(0, 20); },
   commands() {
     const c = [
+      { label: wsNow() === 'self' ? '작업공간: 설정집으로 전환' : '작업공간: 자가개선(이 도구의 소스)으로 전환', fn: () => ACT.ws({ dataset: { ws: wsNow() === 'self' ? 'lore' : 'self' } }) },
       { label: '새 파일', fn: () => FileOps.newFile() }, { label: 'GitHub 에서 받기 (Pull)', fn: () => ACT.doPull() }, { label: '변경 사항 커밋 · 푸시 화면', fn: () => ACT.sideTab({ dataset: { tab: 'sync' } }) },
       { label: '예산 패널 열기', fn: () => BudgetUI.open() }, { label: '설정 열기', fn: () => Settings.open() }, { label: 'AI 쓰기 승인 대기 열기', fn: () => Appr.open() }, { label: '새 대화', fn: () => ACT.chatNew() },
       { label: '테마 바꾸기', fn: () => ACT.theme() }, { label: '스냅샷(되돌리기 기록) 보기', fn: () => Snaps.open() }, { label: '도움말 · 단축키', fn: () => Help.open() },
@@ -90,6 +91,7 @@ const Side = {
   buildTree(filter) {
     const root = { dirs: new Map(), files: [] }; const ft = filter.toLowerCase().split(/\s+/).filter(Boolean);
     for (const f of FS.map.values()) {
+      if (!inWs(f.path)) continue;
       if (ft.length && !ft.every((t) => f.path.toLowerCase().includes(t))) continue;
       const parts = f.path.split('/'); let n = root; for (let i = 0; i < parts.length - 1; i++) { if (!n.dirs.has(parts[i])) n.dirs.set(parts[i], { dirs: new Map(), files: [] }); n = n.dirs.get(parts[i]); } n.files.push(f);
     }
@@ -120,7 +122,7 @@ const Side = {
     };
     walk(root, '', 0);
     // 아직 파일에 반영 안 된 AI 새 파일
-    const pendNew = S.pending.filter((p) => !FS.has(p.path) && (!this.q || p.path.toLowerCase().includes(this.q.toLowerCase())));
+    const pendNew = S.pending.filter((p) => inWs(p.path) && !FS.has(p.path) && (!this.q || p.path.toLowerCase().includes(this.q.toLowerCase())));
     const pn = pendNew.length ? `<div class="sect">AI 새 파일 (승인 대기)</div>` + pendNew.map((p) => `<div class="tr" data-act="reviewPending" data-id="${p.id}"><span class="nm">✦ ${esc(p.path)}</span></div>`).join('') : '';
     tr.innerHTML = (rows.join('') || `<div class="empty" style="padding:24px 8px"><div>${filt ? '일치하는 파일이 없음' : '파일이 없습니다'}</div>${filt ? '' : '<div class="sm" style="margin-top:8px">동기화 탭에서 GitHub 문서를 받아 오세요.</div>'}</div>`) + pn;
   },
@@ -155,18 +157,24 @@ const Side = {
   },
   // ── 동기화
   renderSync(pane) {
-    const c = S.settings.gh; const ch = FS.changes(); const sel = ch.filter((x) => !this.off.has(x.path)); const hasTok = !!S.secrets.ghToken;
+    const self = wsNow() === 'self'; const c = GH.cfg, sy = GH.sy(); const ch = FS.changes(); const sel = ch.filter((x) => !this.off.has(x.path)); const hasTok = !!S.secrets.ghToken;
     const names = { M: '수정', A: '추가', D: '삭제', C: '충돌' };
-    pane.innerHTML = `<div class="card"><div><b>${esc(c.owner)}/${esc(c.repo)}</b></div><div class="inl" style="margin:6px 0"><select id="brSel" style="min-width:0"><option>${esc(c.branch)}</option>${(this._branches || []).filter((b) => b !== c.branch).map((b) => `<option>${esc(b)}</option>`).join('')}</select><button class="sm" data-act="brLoad" title="브랜치 목록 불러오기">↻</button><button class="sm" data-act="brNew" title="새 브랜치">＋</button></div>
-      <div class="xs muted">마지막 받기: ${S.sync.lastPull ? fmtDT(S.sync.lastPull) : '아직 없음'}${S.sync.lastHead ? ' · ' + S.sync.lastHead.slice(0, 7) : ''}<br>${hasTok ? '토큰 설정됨 — 커밋·푸시 가능' : '토큰 없음 — 읽기만 가능 (설정 → GitHub)'}</div>
+    const branchBlock = self
+      ? `<div><b>${esc(c.owner)}/${esc(c.repo)}</b> <span class="tag warn">자가개선</span></div><div class="selfnote">작업 브랜치 <b class="mono">${esc(c.branch)}</b> (기준 <span class="mono">${esc(c.base)}</span>)<br>AI 가 고친 내용은 승인 후 작업 브랜치로만 올라가고 <b>${esc(c.base)} 에는 직접 올라가지 않습니다.</b> 병합은 GitHub 에서 직접 하세요.${sy.branch && sy.branch !== c.branch ? `<br><span class="warn">지금은 ${esc(sy.branch)} 에서 받은 상태 (작업 브랜치가 아직 없음 — 첫 푸시 때 만들어져요)</span>` : ''}</div>`
+      : `<div><b>${esc(c.owner)}/${esc(c.repo)}</b></div><div class="inl" style="margin:6px 0"><select id="brSel" style="min-width:0"><option>${esc(c.branch)}</option>${(this._branches || []).filter((b) => b !== c.branch).map((b) => `<option>${esc(b)}</option>`).join('')}</select><button class="sm" data-act="brLoad" title="브랜치 목록 불러오기">↻</button><button class="sm" data-act="brNew" title="새 브랜치">＋</button></div>`;
+    const selfBlock = self ? `<div class="sect">빌드 · 미리보기</div><div class="inl" style="flex-wrap:wrap;gap:6px"><button class="sm" data-act="selfCheck">빌드 점검</button><button class="sm" data-act="selfPreview">미리보기 열기</button><button class="sm" data-act="selfDownload">HTML 받기</button></div><div class="selfnote">합치기·문법 점검만 합니다(승인 대기 중인 초안 포함). 미리보기는 새 탭에서 열리며 저장소가 분리되어 빈 상태로 시작해요. <b>테스트(npm test)는 Claude Code/로컬에서</b> 돌리세요.</div>
+      <div class="sect">병합</div><div class="inl" style="flex-wrap:wrap;gap:6px"><button class="sm" data-act="selfPR" ${hasTok ? '' : 'disabled'}>PR 만들기 / 열기</button><button class="sm ghost" data-act="selfReset" ${hasTok ? '' : 'disabled'}>작업 브랜치 초기화</button></div><div class="selfnote">PR 을 GitHub 에서 병합한 뒤에는 "작업 브랜치 초기화"로 ${esc(c.base)} 와 맞춰 새로 시작하세요.</div>` : '';
+    pane.innerHTML = `<div class="card">${branchBlock}
+      <div class="xs muted">마지막 받기: ${sy.lastPull ? fmtDT(sy.lastPull) : '아직 없음'}${sy.lastHead ? ' · ' + sy.lastHead.slice(0, 7) : ''}<br>${hasTok ? '토큰 설정됨 — 커밋·푸시 가능' : '토큰 없음 — 읽기만 가능 (설정 → GitHub)'}</div>
       <div class="inl" style="margin-top:8px"><button class="primary" data-act="doPull" style="flex:1">⬇ 받기 (Pull)</button><button class="sm" data-act="pullMore" title="더보기">⋯</button></div></div>
       <div class="sect">변경 ${ch.length}건</div>
-      ${ch.length ? ch.map((x) => `<div class="tr" style="padding-left:2px"><input type="checkbox" data-act="selChange" data-p="${esc(x.path)}" ${this.off.has(x.path) ? '' : 'checked'} ${x.st === 'C' ? 'disabled' : ''}><span class="nm" data-act="fileOpen" data-p="${esc(x.path)}" title="${esc(x.path)}">${esc(x.path)}</span>${H.badge(x.st)}<button class="more" style="opacity:.8" data-act="changeMore" data-p="${esc(x.path)}" data-st="${x.st}">⋯</button></div>`).join('') : '<div class="xs muted" style="padding:4px 8px">GitHub 와 같은 상태입니다</div>'}
+      ${ch.length ? ch.map((x) => `<div class="tr" style="padding-left:2px"><input type="checkbox" data-act="selChange" data-p="${esc(x.path)}" ${this.off.has(x.path) ? '' : 'checked'} ${x.st === 'C' ? 'disabled' : ''}><span class="nm" data-act="fileOpen" data-p="${esc(x.path)}" title="${esc(x.path)}">${esc(self ? x.path.slice(SELF_PREFIX.length) : x.path)}</span>${H.badge(x.st)}<button class="more" style="opacity:.8" data-act="changeMore" data-p="${esc(x.path)}" data-st="${x.st}">⋯</button></div>`).join('') : '<div class="xs muted" style="padding:4px 8px">GitHub 와 같은 상태입니다</div>'}
       ${ch.length ? `<textarea class="fld" id="cmsg" rows="2" placeholder="커밋 메시지" style="margin-top:8px">${esc(this.commitMsg)}</textarea><div class="inl" style="margin-top:6px"><button class="sm" data-act="autoMsg">자동 메시지</button><button class="primary" data-act="doPush" style="flex:1" ${hasTok && sel.length ? '' : 'disabled'}>⬆ 커밋 · 푸시 (${sel.length})</button></div>` : ''}
+      ${selfBlock}
       <div class="sect">되돌리기 기록 <button class="sm ghost" data-act="openSnaps">전체 보기</button></div>
       ${[...S.snaps].reverse().slice(0, 5).map((s) => `<div class="tr" data-act="snapRestore" data-id="${s.id}"><span class="nm">${esc(s.label)}</span><span class="xs muted">${fmtDT(s.ts)} · ${s.files.length}</span></div>`).join('') || '<div class="xs muted" style="padding:4px 8px">아직 없음</div>'}`;
     const cm = pane.querySelector('#cmsg'); if (cm) cm.addEventListener('input', () => (this.commitMsg = cm.value));
-    pane.querySelector('#brSel').addEventListener('change', (e) => { S.settings.gh.branch = e.target.value; saveSettings(); UI.toast(`브랜치: ${e.target.value} — 받기를 눌러 불러오세요`); this.render(); });
+    const bsel = pane.querySelector('#brSel'); if (bsel) bsel.addEventListener('change', (e) => { S.settings.gh.branch = e.target.value; saveSettings(); UI.toast(`브랜치: ${e.target.value} — 받기를 눌러 불러오세요`); this.render(); });
   },
 };
 const rowMenu = (t, items) => Menu.at(t, items);
@@ -184,7 +192,7 @@ ACT.changeMore = (t, e) => { e.stopPropagation(); const p = t.dataset.p, st = t.
 ACT.autoMsg = () => {
   const ch = FS.changes().filter((x) => !Side.off.has(x.path)); const g = { A: [], M: [], D: [] }; ch.forEach((x) => g[x.st] && g[x.st].push(titleOf(x.path)));
   const part = (k, l) => (g[k].length ? `${l} ${g[k].slice(0, 3).join(', ')}${g[k].length > 3 ? ` 외 ${g[k].length - 3}` : ''}` : '');
-  Side.commitMsg = 'studio: ' + [part('A', '추가'), part('M', '수정'), part('D', '삭제')].filter(Boolean).join(' / '); Side.render();
+  Side.commitMsg = (wsNow() === 'self' ? 'self: ' : 'studio: ') + [part('A', '추가'), part('M', '수정'), part('D', '삭제')].filter(Boolean).join(' / '); Side.render();
 };
 ACT.brLoad = async () => { try { Side._branches = await GH.listBranches(); UI.toast(`브랜치 ${Side._branches.length}개`); Side.render(); } catch (e) { UI.toast('⚠ ' + e.message, 5000); } };
 ACT.brNew = async () => {
@@ -202,9 +210,28 @@ ACT.pullMore = (t) => Menu.at(t, [{ label: '전체 다시 받기 (강제)', fn: 
 ACT.doPush = async () => {
   const paths = FS.changes().filter((x) => !Side.off.has(x.path) && x.st !== 'C').map((x) => x.path); const msg = (document.getElementById('cmsg') || {}).value || Side.commitMsg;
   if (!paths.length) return UI.toast('커밋할 파일을 선택하세요'); if (!msg.trim()) return UI.toast('커밋 메시지를 적어 주세요');
-  const c = S.settings.gh; if (!(await dlg.confirm(`${paths.length}개 파일을 ${c.owner}/${c.repo} 의 ${c.branch} 브랜치에 커밋·푸시합니다.\n\n${msg}`, { ok: '푸시' }))) return;
-  try { const r = await GH.push(paths, msg); Side.commitMsg = ''; Side.render(); await Modal.open({ title: '푸시 완료', html: `<div>커밋 <b class="mono">${r.sha.slice(0, 7)}</b> — 파일 ${r.files}개</div><div class="sm muted" style="margin-top:6px"><a href="https://github.com/${esc(c.owner)}/${esc(c.repo)}/commit/${r.sha}" target="_blank" rel="noopener">GitHub 에서 보기 ↗</a></div>`, buttons: [{ label: '확인', kind: 'primary', value: 1 }] }); }
+  const self = wsNow() === 'self'; const c = GH.cfg; if (!(await dlg.confirm(`${paths.length}개 파일을 ${c.owner}/${c.repo} 의 ${c.branch} 브랜치에 커밋·푸시합니다.${self ? `\n(${c.base} 에는 올라가지 않습니다)` : ''}\n\n${msg}`, { ok: '푸시' }))) return;
+  try { const r = await GH.push(paths, msg); Side.commitMsg = ''; Side.render(); await Modal.open({ title: '푸시 완료', html: `<div>커밋 <b class="mono">${r.sha.slice(0, 7)}</b> — 파일 ${r.files}개</div><div class="sm muted" style="margin-top:6px"><a href="https://github.com/${esc(c.owner)}/${esc(c.repo)}/commit/${r.sha}" target="_blank" rel="noopener">GitHub 에서 보기 ↗</a></div>`, buttons: self ? [{ label: '확인', value: 1 }, { label: 'PR 만들기', kind: 'primary', value: 'pr' }] : [{ label: '확인', kind: 'primary', value: 1 }] }).then((v) => { if (v === 'pr') ACT.selfPR(); }); }
   catch (e) { UI.progress(''); UI.toast('⚠ ' + e.message, 8000); Side.render(); }
 };
 ACT.snapRestore = async (t) => { const s = S.snaps.find((x) => x.id === t.dataset.id); if (!s) return; if (await dlg.confirm(`"${s.label}" 이전 상태로 되돌릴까요?\n파일 ${s.files.length}개 (${s.files.map((f) => baseName(f.path)).slice(0, 4).join(', ')}${s.files.length > 4 ? '…' : ''})`, { ok: '되돌리기' })) { await FS.restoreSnap(s); Ed.afterFilesChange(); UI.toast('되돌렸습니다'); } };
 ACT.openSnaps = () => Snaps.open();
+// ── 자가개선: 빌드 점검 · 미리보기 · PR · 작업 브랜치 초기화
+ACT.selfCheck = () => {
+  const r = SelfBuild.build();
+  Modal.open({ title: r.ok ? '빌드 점검: 성공' : '빌드 점검: 실패', html: r.ok ? `<div>합본 <b>${kfmt(r.bytes)}B</b> (JS ${kfmt(r.jsBytes)}B) · 조각 ${r.order.length}개</div><div class="sm muted" style="margin-top:8px">문법만 확인한 결과예요. 동작은 "미리보기 열기"로 직접 눌러 보고, 테스트는 Claude Code/로컬에서 <code>npm test</code> 로 돌리세요.</div>` : `<div class="err" style="white-space:pre-wrap">${esc(r.error)}</div>`, buttons: [{ label: '확인', kind: 'primary', value: 1 }] });
+};
+ACT.selfPreview = () => { const r = SelfBuild.preview(); if (!r.ok) dlg.alert(r.error, '미리보기를 열 수 없음'); else UI.toast(`새 탭에서 열었어요 (${kfmt(r.bytes)}B) — 저장소가 분리되어 빈 상태로 시작합니다`, 5000); };
+ACT.selfDownload = () => { const r = SelfBuild.build(); if (!r.ok) return dlg.alert(r.error, '빌드 실패'); downloadText('ERTES-Studio-preview.html', r.html, 'text/html'); };
+ACT.selfPR = async () => {
+  if (wsNow() !== 'self') return; const c = GH.cfg;
+  const title = await dlg.prompt('PR 제목', '자가개선: ', { title: `${c.branch} → ${c.base} PR` }); if (!title || !title.trim()) return;
+  try { UI.progress('PR 확인 중…'); const r = await GH.openPR(title.trim(), 'ERTES Studio 의 자가개선 기능으로 만든 변경입니다. 병합 전에 `npm test` 와 미리보기 확인을 권장합니다.'); UI.progress('');
+    await Modal.open({ title: r.created ? 'PR 을 만들었어요' : '이미 열린 PR 이 있어요', html: `<div><a href="${esc(r.url)}" target="_blank" rel="noopener">#${r.number} GitHub 에서 열기 ↗</a></div><div class="sm muted" style="margin-top:8px">병합은 GitHub 에서 직접 하세요. 병합 후에는 "작업 브랜치 초기화"를 눌러 ${esc(c.base)} 와 맞춥니다.</div>`, buttons: [{ label: '확인', kind: 'primary', value: 1 }] });
+  } catch (e) { UI.progress(''); UI.toast('⚠ ' + e.message, 7000); }
+};
+ACT.selfReset = async () => {
+  if (wsNow() !== 'self') return; const c = GH.cfg;
+  if (!(await dlg.confirm(`작업 브랜치 ${c.branch} 를 ${c.base} 와 같은 상태로 되돌립니다.\n아직 ${c.base} 에 병합하지 않은 커밋은 브랜치에서 사라집니다. (이 기기에 있는 로컬 변경은 유지되어 다시 받을 때 병합됩니다)`, { danger: true, ok: '초기화' }))) return;
+  try { await GH.resetWork(); UI.toast('초기화했어요. 받기(Pull)로 최신 상태를 불러오세요.', 5000); Side.render(); } catch (e) { UI.toast('⚠ ' + e.message, 7000); }
+};

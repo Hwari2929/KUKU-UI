@@ -41,6 +41,9 @@ const Settings = {
       ${fr('gTok', '개인 액세스 토큰', `<div class="inl"><input type="password" id="gTok" value="${esc(k.ghToken)}" placeholder="github_pat_… (읽기만이면 비워도 됨)" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="sm" data-act="showTok" type="button">보기</button></div>`, '커밋·푸시에는 이 리포의 Contents 읽기/쓰기 권한(fine-grained)이 필요. 공개 리포를 읽기만 할 땐 필요 없음.')}
       ${fr('gInc', '가져올 경로', ta('gInc', g.includes.join('\n'), 4), '폴더는 끝에 /')}${fr('gExc', '제외 경로', ta('gExc', g.excludes.join('\n'), 2))}${fr('gExt', '확장자', tx('gExt', g.exts.join(', ')))}${fr('gKB', '파일 최대 크기(KB)', tx('gKB', g.maxKB))}
       <div class="inl" style="margin:6px 0"><button class="sm" data-act="ghTest">연결 테스트</button><span id="ghRes" class="xs muted"></span></div>
+      <div class="sect">자가개선 <span class="xs muted">(이 도구의 소스 리포 — 토큰은 위와 같은 것을 씁니다)</span></div>
+      ${fr('xOwner', '소유자', tx('xOwner', s.self.owner))}${fr('xRepo', '리포', tx('xRepo', s.self.repo))}${fr('xBase', '기준 브랜치', tx('xBase', s.self.base), 'PR 의 대상. 여기에는 직접 푸시하지 않습니다.')}${fr('xBranch', '작업 브랜치', tx('xBranch', s.self.branch), 'AI 가 고친 내용이 올라가는 곳. 기준 브랜치와 같으면 푸시가 막힙니다.')}
+      ${fr('xInc', '가져올 경로', ta('xInc', s.self.includes.join('\n'), 4), '폴더는 끝에 /')}${fr('xExc', '제외 경로', ta('xExc', s.self.excludes.join('\n'), 2))}${fr('xExt', '확장자', tx('xExt', s.self.exts.join(', ')))}
     </section>
     <section class="sset ${this.tab === 'rules' ? 'on' : ''}" data-s="rules">
       <div class="sm muted" style="margin-bottom:6px">AI 가 쓸 수 있는 곳을 제한합니다. 직접 편집은 제한 없음. <b>금지가 허용보다 먼저</b> 적용돼요. 한 줄에 하나, <code>*</code> 는 폴더 안 와일드카드.</div>
@@ -72,6 +75,8 @@ const Settings = {
     s.includeIndex = c('sIdx'); s.enterSends = c('sEnter'); s.autoApprove = c('sAuto'); s.pinned = lines(v('sPin'));
     const oldGh = JSON.stringify([g.owner, g.repo, g.branch]);
     g.owner = v('gOwner').trim(); g.repo = v('gRepo').trim(); g.branch = v('gBranch').trim(); k.ghToken = v('gTok').trim(); g.includes = lines(v('gInc')); g.excludes = lines(v('gExc')); g.exts = lines(v('gExt')).map((x) => (x.startsWith('.') ? x : '.' + x)); g.maxKB = Math.max(1, Math.round(n('gKB', 400)));
+    { const x = s.self, old = JSON.stringify([x.owner, x.repo, x.branch, x.base]); x.owner = v('xOwner').trim(); x.repo = v('xRepo').trim(); x.base = v('xBase').trim() || 'main'; x.branch = v('xBranch').trim(); x.includes = lines(v('xInc')); x.excludes = lines(v('xExc')); x.exts = lines(v('xExt')).map((e) => (e.startsWith('.') ? e : '.' + e));
+      if (old !== JSON.stringify([x.owner, x.repo, x.branch, x.base])) { S.sync.self = null; } }
     s.writeAllow = lines(v('rAllow')); s.writeDeny = lines(v('rDeny'));
     if (oldGh !== JSON.stringify([g.owner, g.repo, g.branch])) { S.sync.lastHead = null; saveSync(); }
     saveSettings.flush(); saveSecrets.flush(); IDX.dirty = true; Chat.renderComposer(); Side.render(); UI.budget(); UI.toast('설정을 저장했습니다');

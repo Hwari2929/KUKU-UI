@@ -29,13 +29,22 @@ const TOOL_DEFS = [
   { name: 'list_notes', description: '폴더 안의 파일/하위 폴더 목록(크기 포함). folder 를 비우면 최상위.', input_schema: { type: 'object', properties: { folder: { type: 'string' } } } },
   { name: 'write_note', description: '노트를 통째로 쓴다(새 파일 또는 전체 교체). 허용 폴더에만 가능하며 사용자 승인 후 반영된다. 결과에 린트가 나오니 error 는 고친다. 일부만 바꿀 땐 edit_note.', input_schema: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' }, summary: { type: 'string', description: '무엇을 왜 썼는지 한 줄' } }, required: ['path', 'content'] } },
   { name: 'edit_note', description: '노트의 일부를 바꾼다: old 문자열(파일 안에 정확히 1번 있어야 함)을 new 로 치환. 대기 중인 초안이 있으면 그 위에서 적용된다.', input_schema: { type: 'object', properties: { path: { type: 'string' }, old: { type: 'string' }, new: { type: 'string' }, summary: { type: 'string' } }, required: ['path', 'old', 'new'] } },
+  { name: 'build_check', description: '[자가개선 전용] studio-src 의 현재 소스(승인 대기 중인 초안 포함)를 build.js 순서대로 합쳐 문법을 검사한다. 성공하면 크기, 실패하면 문제 파일을 알려준다. 수정을 올린 뒤 꼭 실행.', input_schema: { type: 'object', properties: {} } },
   { name: 'lint', description: '무료 로컬 점검: 한글 수 표기, 장면 구조, 확장 문서 형식. path 의 파일(대기 초안 포함) 또는 text 를 검사한다.', input_schema: { type: 'object', properties: { path: { type: 'string' }, text: { type: 'string' } } } },
 ];
 
 function clipList(arr, n, more = '…') { return arr.length > n ? arr.slice(0, n).concat([`${more} (${arr.length - n}개 더)`]) : arr; }
 const kfmt = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n));
 
+// 자가개선 모드의 "린트": 한글 문장 규칙 대신 코드 문법만 본다 (.js 는 파싱, .json 은 JSON.parse)
+function codeCheck(text, path) {
+  let err = '';
+  try { if (/\.(js|mjs|cjs)$/i.test(path)) new Function(text); else if (/\.json$/i.test(path)) JSON.parse(text); } catch (e) { err = String(e && e.message || e); }
+  const sm = { error: err ? 1 : 0, warn: 0 };
+  return { is: [], sm, text: err ? `문법 오류: ${err}` : (/\.(js|mjs|cjs|json)$/i.test(path) ? '문법 확인: 문제 없음 (이 파일 단독 기준 — 합쳤을 때는 build_check)' : '검사 대상 아님') };
+}
 function lintBrief(text, path) {
+  if (wsNow() === 'self') return codeCheck(text, path || '');
   const is = lintText(text, { path }); const sm = lintSummary(is);
   return { is, sm, text: is.length ? `린트: error ${sm.error} / warn ${sm.warn}\n` + lintReport(clipList(is, 14)) : '린트: 문제 없음' };
 }
@@ -54,7 +63,7 @@ const ToolImpl = {
     const head = `📄 ${path} (${kfmt(text.length)}자)${tag}${rn.ambiguous ? `\n(같은 이름 후보: ${rn.ambiguous.join(', ')})` : ''}`;
     const links = () => { const o = [...new Set(linksOf(path).filter((l) => l.path).map((l) => l.path))]; const b = backlinksOf(path); return (o.length ? `\n→ 링크: ${clipList(o, 12).join(', ')}` : '') + (b.length ? `\n← 역링크: ${clipList(b, 12).join(', ')}` : ''); };
     if (inp.section) {
-      const s = sectionOf(text, inp.section);
+      const s = sectionOf(text, inp.section, outlineFor(path, text));
       if (!s.h) return { text: `${head}\n"${inp.section}" 구획을 찾지 못함. 목차:\n` + clipList(s.ol.map((h) => `${'  '.repeat(h.lvl - 1)}${h.title}`), 60).join('\n'), err: true };
       const off = Math.max(0, inp.offset || 0); const body = s.text.slice(off, off + max); const more = s.text.length > off + max;
       return `${head}\n§ ${s.h.title} (${kfmt(s.text.length)}자${off ? `, ${off}자부터` : ''})${s.others.length ? `\n(비슷한 구획: ${s.others.join(', ')})` : ''}\n---\n${body}${more ? `\n---\n[이 구획이 더 있음: section 같게 offset=${off + max}]` : ''}`;
@@ -63,7 +72,7 @@ const ToolImpl = {
       const off = Math.max(0, inp.offset || 0); const body = text.slice(off, off + max); const more = text.length > off + max;
       return `${head}${off ? ` — ${off}자부터` : ''}\n---\n${body}${more ? `\n---\n[더 있음: offset=${off + max}]` : ''}${off ? '' : links()}`;
     }
-    const ol = outlineOf(text);
+    const ol = outlineFor(path, text);
     return `${head}\n문서가 커서 목차만 보여줍니다. section 에 구획 제목을 넣어 읽으세요 (또는 offset 으로 이어 읽기).\n---\n` + clipList(ol.map((h) => `${'  '.repeat(Math.min(h.lvl - 1, 4))}${h.title} (${kfmt(h.size)})`), 90).join('\n') + links();
   },
   list_notes(inp) {
@@ -92,12 +101,18 @@ const ToolImpl = {
     const cur = FS.read(path); const lint = lintBrief(content, path);
     if (cur === content && !Pending.get(path)) return '변경 사항이 없음.';
     const summary = String(inp.summary || '').slice(0, 120);
-    if (S.settings.autoApprove && lint.sm.error === 0) {
+    if (S.settings.autoApprove && wsNow() !== 'self' && lint.sm.error === 0) {
       Pending.reject(Pending.get(path)?.id);
       return FS.apply([{ path, after: content }], `AI 쓰기: ${path}`).then(() => `저장됨(자동 승인): ${path} (${kfmt(content.length)}자)\n${lint.text}`);
     }
     Pending.add({ path, after: content, summary, chatId: ctx && ctx.chatId, lint: lint.sm });
     return `승인 대기열에 올림: ${path} (${cur == null ? '새 파일' : '수정'}, ${kfmt(content.length)}자). 사용자가 승인하면 반영됩니다.\n${lint.text}${lint.sm.error ? '\nerror 가 있으니 edit_note 로 고쳐 같은 경로에 다시 올리세요.' : ''}`;
+  },
+  build_check() {
+    if (wsNow() !== 'self') return { text: '자가개선 모드에서만 쓸 수 있는 도구입니다.', err: true };
+    const r = SelfBuild.build();
+    if (!r.ok) return { text: `빌드 실패: ${r.error}`, err: true };
+    return `빌드 성공: 합본 ${kfmt(r.bytes)}B (JS ${kfmt(r.jsBytes)}B), 조각 ${r.order.length}개. 문법만 확인한 것이라 동작은 사용자가 미리보기에서 확인해야 합니다.`;
   },
   lint(inp) {
     let text = inp.text, path = normPath(inp.path || '');
@@ -135,8 +150,9 @@ const Skills = {
   names() { return [...this.all().keys()]; },
 };
 function toolsFor(skill) {
-  if (!skill || !skill.tools) return TOOL_DEFS;
-  const set = new Set(skill.tools); const t = TOOL_DEFS.filter((d) => set.has(d.name)); return t.length ? t : TOOL_DEFS;
+  const all = wsNow() === 'self' ? TOOL_DEFS : TOOL_DEFS.filter((d) => d.name !== 'build_check');
+  if (!skill || !skill.tools) return all;
+  const set = new Set(skill.tools); const t = all.filter((d) => set.has(d.name)); return t.length ? t : all;
 }
 
 /* ── 시스템 프롬프트 ──
@@ -157,7 +173,27 @@ const CORE_RULES = `당신은 'ERTES' 프로젝트(Obsidian 방식 세계관 문
 - 바(bar)는 함대(fleet)가 아닙니다. {pc} 는 레이첼입니다.
 - 속마음은 장면당 0~1줄, 장면 본문은 15~25줄이 기본입니다.`;
 
+const SELF_RULES = `당신은 'ERTES Studio' 자신의 소스 코드를 개선하는 개발 보조자입니다. 이 도구는 단독 실행 HTML 한 파일로 빌드되며, 소스는 KUKU-UI 리포(studio-src/ 아래에 받아져 있음)에 있습니다. 사용자는 한국어로 대화합니다.
+
+[일하는 방식]
+- 먼저 studio-src/CLAUDE.md(고정 문서로 아래에 붙어 있음)의 구조·규칙을 따릅니다. 파일 색인으로 위치를 잡고, search 로 코드를 찾고, read_note 의 section 에 함수/상수 이름을 넣어 필요한 부분만 읽습니다. 큰 파일을 통째로 읽지 않습니다.
+- 수정은 edit_note(old → new, old 는 파일에서 정확히 1번 나와야 함)로 작게 합니다. write_note 는 새 파일이나 짧은 파일에만 씁니다. 한 번의 요청에는 한 가지 주제만 다룹니다.
+- 올린 수정은 사용자의 승인을 거쳐야 반영됩니다. 수정을 올린 뒤에는 반드시 build_check 로 합친 결과의 문법을 확인하고, 실패하면 직접 고칩니다.
+- 브라우저 안에서는 테스트를 실행할 수 없습니다. 동작이 바뀌면 test/ 의 관련 테스트를 함께 고치거나 추가하고, 실행(npm test)은 사용자가 Claude Code/로컬에서 하도록 안내합니다. 확인하지 못한 것을 확인했다고 말하지 않습니다.
+- 답변 끝에는 (1) 무엇을 왜 바꿨는지 (2) 위험하거나 확인이 필요한 점 (3) 사용자가 미리보기에서 눌러 볼 확인 항목을 짧게 적습니다. 코드를 답변에 통째로 다시 붙이지 않습니다.
+
+[건드리지 않는 것]
+- 외부 라이브러리·CDN 추가 금지, 사용자에게 보이는 문구는 한국어, alert/confirm/prompt 대신 dlg 모달, 한글 IME 조합 중 Enter 를 가로채지 않기 — CLAUDE.md 규칙을 지킵니다.
+- 승인 대기열·쓰기 규칙(canWrite)·예산 한도(Budget)·API 키/토큰 보관 방식을 약화하거나 우회하는 변경은 하지 않습니다. 필요해 보이면 먼저 사용자에게 묻습니다.
+- parts/45_skills.gen.js 는 생성물이라 고치지 않습니다(skills/*.md 를 고침). 커밋·푸시는 사용자가 합니다.`;
+
+function selfIndexText() {
+  const byDir = new Map();
+  for (const p of FS.paths()) { const rel = p.slice(SELF_PREFIX.length); const i = rel.lastIndexOf('/'); const d = i < 0 ? '(루트)' : rel.slice(0, i + 1); if (!byDir.has(d)) byDir.set(d, []); byDir.get(d).push(`${baseName(rel)}(${kfmt((FS.read(p) || '').length)})`); }
+  return [...byDir].sort((a, b) => a[0].localeCompare(b[0])).map(([d, it]) => `${d} [${it.length}] ${it.join(', ')}`).join('\n') + '\n(경로는 모두 studio-src/ 아래. 예: studio-src/parts/40_llm.js)';
+}
 function fileIndexText() {
+  if (wsNow() === 'self') return selfIndexText();
   const cap = 14000; const byDir = new Map();
   for (const p of FS.paths()) { if (!isMd(p) || /^studio\/skills\//.test(p)) continue; const i = p.lastIndexOf('/'); const d = i < 0 ? '(루트)' : p.slice(0, i + 1); if (!byDir.has(d)) byDir.set(d, []); byDir.get(d).push(p); }
   const lines = []; let total = 0;
@@ -176,8 +212,8 @@ function fileIndexText() {
 }
 function buildSystem(chat) {
   const blocks = [];
-  let core = CORE_RULES;
-  for (const p of S.settings.pinned || []) { const t = FS.read(p); if (t) core += `\n\n[고정 문서: ${p}]\n${t.length > 24000 ? t.slice(0, 24000) + '\n…(이하 생략: read_note 로 이어 읽기)' : t}`; }
+  const self = wsNow() === 'self'; let core = self ? SELF_RULES : CORE_RULES;
+  for (const p of self ? [SELF_PREFIX + 'CLAUDE.md'] : (S.settings.pinned || [])) { const t = FS.read(p); if (t) core += `\n\n[고정 문서: ${p}]\n${t.length > 24000 ? t.slice(0, 24000) + '\n…(이하 생략: read_note 로 이어 읽기)' : t}`; }
   blocks.push({ text: core, cache: true });
   const parts = [];
   if (S.settings.includeIndex) parts.push(`[파일 색인 — 폴더 [개수] 이름(크기)]\n${fileIndexText()}`);

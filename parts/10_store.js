@@ -73,7 +73,8 @@ async function loadSettings() {
   delete S.settings.models['claude-fable-5-1'];   // Fable 은 목록에서 뺐다 (이미 저장된 설정에서도 제거)
   if (S.settings.model === 'claude-fable-5-1' || isBatchModel(S.settings.model)) S.settings.model = DEFAULT_SETTINGS.model;
   if (b.anchorUSD == null || b.anchorTs == null) { b.anchorUSD = b.creditUSD; b.anchorTs = Date.now(); }
-  S.sync = Object.assign({ lastHead: null, lastPull: null, branch: null }, (await DB.get('meta', 'sync')) || {});
+  S.sync = Object.assign({ lastHead: null, lastPull: null, branch: null, self: null }, (await DB.get('meta', 'sync')) || {});
+  if (S.ui) S.ui.ws = S.ui.ws === 'self' ? 'self' : 'lore';
   S.pending = (await DB.get('meta', 'pending')) || [];
   const ui = await DB.get('meta', 'ui'); if (ui) Object.assign(S.ui, ui);
 }
@@ -103,7 +104,8 @@ const FS = {
   map: new Map(), _q: new Set(),
   get(p) { return this.map.get(p); },
   has(p) { const f = this.map.get(p); return !!f && !f.deleted; },
-  paths() { return [...this.map.values()].filter((f) => !f.deleted).map((f) => f.path).sort((a, b) => a.localeCompare(b, 'ko')); },
+  allPaths() { return [...this.map.values()].filter((f) => !f.deleted).map((f) => f.path).sort((a, b) => a.localeCompare(b, 'ko')); },
+  paths() { return this.allPaths().filter(inWs); },   // 지금 작업공간의 파일만 (설정집 ↔ 자가개선)
   read(p) { const f = this.map.get(p); return f && !f.deleted ? f.content : null; },
   status(f) {
     if (f.conflict) return 'C';
@@ -111,7 +113,7 @@ const FS = {
     if (!f.baseSha) return f.seeded && f.content === f.seedContent ? null : 'A';
     return f.content !== f.base ? 'M' : null;
   },
-  changes() { return [...this.map.values()].map((f) => ({ path: f.path, st: this.status(f) })).filter((c) => c.st).sort((a, b) => a.path.localeCompare(b.path, 'ko')); },
+  changes(all = false) { return [...this.map.values()].filter((f) => all || inWs(f.path)).map((f) => ({ path: f.path, st: this.status(f) })).filter((c) => c.st).sort((a, b) => a.path.localeCompare(b.path, 'ko')); },
   async load() { for (const f of await DB.all('files')) this.map.set(f.path, f); IDX.dirty = true; },
   _flush: debounce(function () { for (const p of FS._q) { const f = FS.map.get(p); if (f) DB.put('files', p, f); else DB.del('files', p); } FS._q.clear(); }, 400),
   touch(p) { this._q.add(p); this._flush(); IDX.dirty = true; },

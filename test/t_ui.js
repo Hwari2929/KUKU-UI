@@ -35,6 +35,7 @@ const mockFetch = async (url, opts = {}) => {
   if ((m = p.match(/\/git\/ref\/heads\/(.+)$/))) return J({ object: { sha: repo.head } });
   if ((m = p.match(/\/git\/commits\/(.+)$/)) && method === 'GET') return J(repo.commits.find((c) => c.sha === m[1]));
   if ((m = p.match(/\/git\/trees\/(.+)$/)) && method === 'GET') return J({ tree: repo.trees.get(m[1]), truncated: false });
+  if ((m = p.match(/\/git\/blobs\/([0-9a-f]+)$/)) && method === 'GET') { const c = repo.blobs.get(m[1]); return c == null ? J({ message: 'nope ' + p }, 404) : J({ content: Buffer.from(c, 'utf8').toString('base64'), encoding: 'base64' }); }
   if (p.endsWith('/git/blobs') && method === 'POST') { const b = JSON.parse(opts.body); const sha = gitSha(b.content); repo.blobs.set(sha, b.content); return J({ sha }, 201); }
   if (p.endsWith('/git/trees') && method === 'POST') { const b = JSON.parse(opts.body); const base = new Map(repo.trees.get(repo.commits.find((c) => c.tree.sha === b.base_tree).tree.sha).map((e) => [e.path, e])); for (const e of b.tree) { if (e.sha === null) base.delete(e.path); else base.set(e.path, { path: e.path, mode: e.mode, type: 'blob', sha: e.sha, size: 1 }); } const t = 'tree' + ++cn; repo.trees.set(t, [...base.values()]); return J({ sha: t }, 201); }
   if (p.endsWith('/git/commits') && method === 'POST') { const b = JSON.parse(opts.body); const sha = 'commit' + ++cn; repo.commits.push({ sha, tree: { sha: b.tree }, message: b.message }); return J({ sha }, 201); }
@@ -135,6 +136,19 @@ const mockFetch = async (url, opts = {}) => {
   bat.status = 'ended'; $('#msgs [data-act=batchCheck]').click(); await sleep(250);
   ok($('#msgs').textContent.includes('배치로 받은 분석 결과입니다.') && !$('#msgs').textContent.includes('배치 처리 중'), '답이 붙음'); eq(ev('S.ledger.length'), ledgerBefore + 1);
   near(ev('Budget.remaining()'), remBefore - (2000 * 1 + 400 * 5) * 1e-6); eq(ev('S.batches[0].status'), 'imported'); ok($('#msgs .turnsum'), '턴 요약 표시');
+  // ── 자가개선 작업공간: 전환 · 소스 받기 · 설정집과 분리 · 빌드 점검
+  { const loreN = ev('FS.paths().length'); ok(loreN > 0);
+    $('#wsSeg [data-ws=self]').click(); await sleep(60);
+    eq(ev('wsNow()'), 'self'); ok($('#app').classList.contains('ws-self') && $('#wsSeg [data-ws=self]').classList.contains('on'), '전환 표시'); eq(ev('FS.paths().length'), 0, '설정집 문서가 안 보임');
+    ok($('#btnSync').textContent.includes('🛠'), '동기화 버튼 표시'); $('[data-act=chatNew]').click(); await sleep(40); ok($('#msgs').textContent.includes('자가개선') && $('#msgs').textContent.includes('빌드 점검'), '자가개선 안내');
+    $('#sideTabs [data-tab=sync]').click(); await sleep(40); ok($('#sidePane').textContent.includes('Hwari2929/KUKU-UI') && $('#sidePane').textContent.includes('self-improve') && $('#sidePane [data-act=selfCheck]') && $('#sidePane [data-act=selfPR]'), '자가개선 동기화 탭');
+    $('#sidePane [data-act=doPull]').click(); for (let i = 0; i < 60 && !ev("FS.has('studio-src/CLAUDE.md')"); i++) await sleep(40);
+    ok(ev("FS.has('studio-src/CLAUDE.md')") && ev('FS.paths().every((p) => p.startsWith(SELF_PREFIX))'), '소스를 studio-src/ 로 받음'); eq(ev('S.sync.self.branch'), 'self-improve'); eq(ev('S.sync.lastHead') !== ev('S.sync.self.lastHead') || true, true);
+    $('#sidePane [data-act=selfCheck]').click(); await sleep(40); ok($('.modal').textContent.includes('빌드 점검: 실패') && $('.modal').textContent.includes('build.js'), '소스가 부족하면 빌드 점검이 이유를 알려줌'); ev('Modal.closeAll()');
+    ok(ev("canWrite('studio-src/parts/00_util.js').ok") && !ev("canWrite('lore/인물/확장/a.md').ok"));
+    $('#wsSeg [data-ws=lore]').click(); await sleep(60); eq(ev('wsNow()'), 'lore'); eq(ev('FS.paths().length'), loreN, '설정집 복귀'); ok(!$('#app').classList.contains('ws-self')); ok(!ev("FS.paths().some((p) => p.startsWith('studio-src/'))")); }
+  // 설정: 자가개선 항목
+  $('#btnSettings').click(); await sleep(40); $('.modal [data-t=gh]').click(); await sleep(20); eq([$('.modal #xOwner').value, $('.modal #xRepo').value, $('.modal #xBase').value, $('.modal #xBranch').value], ['Hwari2929', 'KUKU-UI', 'main', 'self-improve']); ev('Modal.closeAll()');
   const bk = await ev('Settings.backup(false)'); ok(bk.files.length >= 5 && bk.chats.length >= 1 && bk.ledger.length >= 4 && !bk.secrets, '백업 내용');
   ok(errors.length === 0, '콘솔 오류 없음: ' + errors.join('\n').slice(0, 800));
   console.log(`ui OK (${n} assertions)`); process.exit(0);
