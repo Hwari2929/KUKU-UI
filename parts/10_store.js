@@ -70,6 +70,8 @@ async function loadSettings() {
     const old = saved.budget.creditKRW / (saved.budget.krwPerUSD || 1400); if (b.anchorUSD != null) b.anchorUSD = +(b.anchorUSD + (b.creditUSD - old)).toFixed(4);
   }
   delete b.creditKRW;
+  delete S.settings.models['claude-fable-5-1'];   // Fable 은 목록에서 뺐다 (이미 저장된 설정에서도 제거)
+  if (S.settings.model === 'claude-fable-5-1' || isBatchModel(S.settings.model)) S.settings.model = DEFAULT_SETTINGS.model;
   if (b.anchorUSD == null || b.anchorTs == null) { b.anchorUSD = b.creditUSD; b.anchorTs = Date.now(); }
   S.sync = Object.assign({ lastHead: null, lastPull: null, branch: null }, (await DB.get('meta', 'sync')) || {});
   S.pending = (await DB.get('meta', 'pending')) || [];

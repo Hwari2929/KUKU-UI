@@ -8,7 +8,7 @@ const Settings = {
     const tx = (id, v, ph = '', type = 'text') => `<input type="${type}" id="${id}" value="${esc(v)}" placeholder="${esc(ph)}" autocomplete="off" autocapitalize="off" spellcheck="false">`;
     const ck = (id, v) => `<input type="checkbox" id="${id}" ${v ? 'checked' : ''}>`;
     const ta = (id, v, r = 4) => `<textarea class="fld mono" id="${id}" rows="${r}" spellcheck="false" style="font-size:14px">${esc(v)}</textarea>`;
-    const modelOpts = (cur) => Object.keys(s.models).map((m) => `<option value="${esc(m)}" ${m === cur ? 'selected' : ''}>${esc(s.models[m].label || m)} — ${esc(m)}</option>`).join('');
+    const modelOpts = (cur) => Object.keys(s.models).filter((m) => !s.models[m].batch).map((m) => `<option value="${esc(m)}" ${m === cur ? 'selected' : ''}>${esc(s.models[m].label || m)} — ${esc(m)}</option>`).join('');
     const tabs = [['api', 'API'], ['behave', '동작'], ['gh', 'GitHub'], ['rules', '쓰기 규칙'], ['data', '데이터']];
     const html = `<nav class="tabs" style="margin:-4px -4px 12px;border-radius:10px;overflow:hidden">${tabs.map(([t, l]) => `<button data-act="setTab" data-t="${t}" class="${this.tab === t ? 'on' : ''}">${l}</button>`).join('')}</nav>
     <section class="sset ${this.tab === 'api' ? 'on' : ''}" data-s="api">
@@ -19,7 +19,7 @@ const Settings = {
       ${fr('sModel', '기본 모델', `<select id="sModel">${modelOpts(s.model)}</select>`, '대화마다, 스킬마다 따로 지정할 수도 있어요.')}
       <div class="inl" style="margin:6px 0"><button class="sm" data-act="keyTest">키 · 모델 목록 확인</button><span id="keyRes" class="xs muted"></span></div>
       <div class="sect">OpenAI 호환 · OpenRouter <span class="xs muted">(쓰지 않아도 됨)</span></div>
-      <div class="inl" style="margin:4px 0 8px"><button class="sm" type="button" data-act="oPreset" data-p="openrouter">프리셋: ${esc(OPENAI_PRESETS.openrouter.label)}</button><span class="xs muted">누르면 아래 칸이 채워지고 제공자가 바뀝니다 (저장해야 적용)</span></div>
+      <div class="inl" style="margin:4px 0 8px;flex-wrap:wrap">${Object.keys(OPENAI_PRESETS).map((k) => `<button class="sm" type="button" data-act="oPreset" data-p="${k}">프리셋: ${esc(OPENAI_PRESETS[k].label)}</button>`).join('')}<span class="xs muted">누르면 아래 칸이 채워지고 제공자가 바뀝니다 (저장해야 적용)</span></div>
       ${fr('sOKey', 'API 키', tx('sOKey', k.openaiKey, isOpenRouter(s.openai.base) ? 'sk-or-…' : '', 'password'), 'OpenRouter 키는 openrouter.ai/keys 에서 발급합니다.')}${fr('sOBase', '주소', tx('sOBase', s.openai.base))}${fr('sOModel', '모델', tx('sOModel', s.openai.model))}${fr('sOIn', '입력 단가 (USD/1M)', tx('sOIn', s.openai.in))}${fr('sOCr', '캐시 읽기 단가 (USD/1M)', tx('sOCr', s.openai.cr == null ? '' : s.openai.cr, '비우면 입력 단가의 절반'))}${fr('sOOut', '출력 단가 (USD/1M)', tx('sOOut', s.openai.out), '단가를 넣어야 장부에 비용이 잡힙니다. OpenRouter 는 응답에 실제 청구액이 와서 그 값을 우선 씁니다. OpenAI 호환 쪽 사용분은 Anthropic 남은 크레딧에서 빠지지 않습니다.')}
     </section>
     <section class="sset ${this.tab === 'behave' ? 'on' : ''}" data-s="behave">

@@ -6,10 +6,10 @@ ERTES 프로젝트(Obsidian 방식 세계관 문서 + ADV 캠페인 스크립트
 작업 대상 문서 리포는 https://github.com/Hwari2929/ERTES 이고, 이 리포에는 도구의 코드만 있습니다.
 
 ## 구조
-- `parts/` — 번호 순서대로 이어 붙여 한 스크립트가 되는 조각들. 앞 번호가 뒤 번호의 의존 대상입니다 (00 유틸 → 10 저장소 → 20 텍스트 → 30 GitHub → 40 LLM/예산 → 50 도구 → 60 에이전트 → 70~76 화면 → 90 시작).
+- `parts/` — 번호 순서대로 이어 붙여 한 스크립트가 되는 조각들. 앞 번호가 뒤 번호의 의존 대상입니다 (00 유틸 → 10 저장소 → 20 텍스트 → 30 GitHub → 40 LLM/예산 → 50 도구 → 60 에이전트 → 65 배치 → 70~76 화면 → 90 시작).
 - `ui/` — `shell.html`(골격), `style.css`.
 - `skills/*.md` — 내장 스킬. `gen_skills.js` 가 `parts/45_skills.gen.js` 를 생성합니다 (생성물은 직접 고치지 않음).
-- `test/` — `t_text`, `t_gh`, `t_llm`, `t_tools`, `t_agent` 는 Node 만으로 실행. `t_ui` 는 jsdom + fake-indexeddb 필요.
+- `test/` — `t_text`, `t_gh`, `t_llm`, `t_tools`, `t_agent`, `t_batch` 는 Node 만으로 실행. `t_ui` 는 jsdom + fake-indexeddb 필요.
 - `build.js` — 조각을 합쳐 `ERTES-Studio.html` 생성 (합본은 커밋하지 않음).
 
 ## 작업 규칙

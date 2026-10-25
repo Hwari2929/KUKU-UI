@@ -39,15 +39,26 @@ const isText = (p) => /\.(md|markdown|txt|json|csv|yml|yaml)$/i.test(p);
 const isMd = (p) => /\.(md|markdown|txt)$/i.test(p);
 
 /* ── 모델 가격 (USD / 1M tokens). 출처: platform.claude.com 가격표 (2026-10-25 확인). 설정에서 고칠 수 있다. */
-const DEFAULT_MODELS = {
-  'claude-sonnet-5-5': { label: 'Sonnet 5.5', in: 2, out: 10, cw5: 2.5, cw1h: 4, cr: 0.10, ctx: 1000000 },
+const BASE_MODELS = {
   'claude-opus-5-5': { label: 'Opus 5.5', in: 4, out: 20, cw5: 5, cw1h: 8, cr: 0.20, ctx: 1000000 },
+  'claude-sonnet-5-5': { label: 'Sonnet 5.5', in: 2, out: 10, cw5: 2.5, cw1h: 4, cr: 0.10, ctx: 1000000 },
   'claude-haiku-5-5': { label: 'Haiku 5.5', in: 0.10, out: 0.50, cw5: 0.125, cw1h: 0.20, cr: 0.01, ctx: 200000, tier: { over: 100000, in: 0.50, out: 2.50, cw5: 0.625, cw1h: 1, cr: 0.05 } },
-  'claude-fable-5-1': { label: 'Fable 5.1', in: 10, out: 50, cw5: 12.5, cw1h: 20, cr: 0.25, ctx: 1000000 },
 };
+// 배치(Message Batches API)는 모든 토큰 단가가 50%. 키는 `<모델>:batch`, 실제 API 모델 이름은 apiId.
+const halve = (m) => { const o = { ...m }; for (const k of ['in', 'out', 'cw5', 'cw1h', 'cr']) o[k] = +(m[k] / 2).toFixed(6); if (m.tier) { o.tier = { ...m.tier }; for (const k of ['in', 'out', 'cw5', 'cw1h', 'cr']) o.tier[k] = +(m.tier[k] / 2).toFixed(6); } return o; };
+const DEFAULT_MODELS = (() => {
+  const o = {};
+  for (const id of ['claude-opus-5-5', 'claude-sonnet-5-5']) { o[id] = { ...BASE_MODELS[id] }; o[id + ':batch'] = { ...halve(BASE_MODELS[id]), label: BASE_MODELS[id].label + ' 배치', batch: true, apiId: id }; }
+  o['claude-haiku-5-5'] = { ...BASE_MODELS['claude-haiku-5-5'] };
+  return o;
+})();
+const modelInfo = (key) => (S.settings.models || {})[key] || {};
+const isBatchModel = (key) => !!modelInfo(key).batch;
+const apiModel = (key) => modelInfo(key).apiId || key;
 // OpenAI 호환 쪽 프리셋 (단가 USD/1M — OpenRouter 모델 페이지 기준, 2026-10-25 확인). cr = 캐시 읽기 단가
 const OPENAI_PRESETS = {
   openrouter: { label: 'OpenRouter · Gemini 4 Argon', base: 'https://openrouter.ai/api/v1', model: 'google/gemini-4-argon', in: 2, out: 10, cr: 0.10, keyHint: 'sk-or-…' },
+  'openrouter-batch': { label: 'OpenRouter · Gemini 4 Argon 배치 (반값)', base: 'https://openrouter.ai/api/v1', model: 'google/gemini-4-argon:batch', in: 1, out: 5, cr: 0.05, keyHint: 'sk-or-…' },
 };
 const isOpenRouter = (base) => /(^|\/\/)([\w-]+\.)*openrouter\.ai(\/|$)/i.test(base || '');
 const DEFAULT_SETTINGS = {
@@ -81,7 +92,7 @@ const DEFAULT_SETTINGS = {
 const S = {
   settings: clone(DEFAULT_SETTINGS),
   secrets: { apiKey: '', openaiKey: '', ghToken: '' },
-  chats: [], ledger: [], pending: [], snaps: [],
+  chats: [], ledger: [], pending: [], snaps: [], batches: [],
   sync: { lastHead: null, lastPull: null, branch: null },
   run: { busy: false, abort: null, chatId: null },
   ui: { open: [], cur: null, openDirs: {}, sideTab: 'files', mode: 'split', chatId: null, theme: 'auto', sideOpen: true, view: 'edit', fontSize: 16, editorFont: 'sans', chatW: 460, includeDoc: true },

@@ -18,10 +18,15 @@ const gitSha = (s) => { const b = Buffer.from(s, 'utf8'); return crypto.createHa
 const repo = { files: new Map(), trees: new Map(), blobs: new Map(), commits: [], head: null }; let cn = 0;
 function commitAll(msg) { const es = [...repo.files].map(([p, c]) => ({ path: p, mode: '100644', type: 'blob', sha: gitSha(c), size: Buffer.byteLength(c) })); es.forEach((e) => repo.blobs.set(e.sha, repo.files.get(e.path))); const t = 'tree' + ++cn; repo.trees.set(t, es); const c = 'commit' + cn; repo.commits.push({ sha: c, tree: { sha: t }, message: msg }); repo.head = c; }
 repo.files.set('lore/인물/린디웨.md', '# 린디웨\n협력팀장. [[비비안]] 과 친구.\n'); repo.files.set('lore/인물/비비안.md', '# 비비안\n작전반.\n'); repo.files.set('docs/VOICES.md', '# VOICES\n## 린디웨\n해요체\n'); repo.files.set('CLAUDE.md', '# 규칙\n숫자는 아라비아 숫자\n'); commitAll('init');
-let anth = []; const anthReqs = []; let fxMode = 'ok'; const fxCalls = [];
+let anth = []; const anthReqs = []; const bat = { status: 'in_progress', cid: '', params: null }; let fxMode = 'ok'; const fxCalls = [];
 const J = (o, st = 200) => ({ ok: st < 300, status: st, statusText: 'x', headers: { get: () => null }, json: async () => o, text: async () => JSON.stringify(o) });
 const mockFetch = async (url, opts = {}) => {
   const u = new URL(url), p = decodeURIComponent(u.pathname), method = opts.method || 'GET';
+  if (u.host === 'api.anthropic.com' && p.startsWith('/v1/messages/batches')) {
+    if (method === 'POST' && p === '/v1/messages/batches') { const b = JSON.parse(opts.body); bat.cid = b.requests[0].custom_id; bat.params = b.requests[0].params; return J({ id: 'msgbatch_ui', processing_status: 'in_progress', request_counts: { processing: 1 } }); }
+    if (p.endsWith('/results')) return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify({ custom_id: bat.cid, result: { type: 'succeeded', message: { model: 'claude-sonnet-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: '배치로 받은 분석 결과입니다.' }], usage: { input_tokens: 2000, output_tokens: 400 } } } }) };
+    return J({ id: 'msgbatch_ui', processing_status: bat.status, request_counts: { processing: bat.status === 'ended' ? 0 : 1, succeeded: 0 } });
+  }
   if (u.host === 'api.anthropic.com') { if (p.endsWith('/models')) return J({ data: [{ id: 'claude-sonnet-5-5', display_name: 'Sonnet 5.5' }] }); if (p.endsWith('/count_tokens')) return J({ input_tokens: 4321 }); anthReqs.push(JSON.parse(opts.body)); const s = anth.shift(); if (!s) throw new Error('anthropic script empty'); return sseRes(s); }
   if (u.host === 'api.frankfurter.dev') { fxCalls.push(u.host); return fxMode === 'ok' ? J({ base: 'USD', date: '2026-10-23', rates: { KRW: 1385.5 } }) : J({}, 500); }
   if (u.host === 'open.er-api.com') { fxCalls.push(u.host); return J({ result: 'success', time_last_update_utc: 'Sun, 25 Oct 2026 00:02:31 +0000', rates: { KRW: 1401.25 } }); }
@@ -115,6 +120,20 @@ const mockFetch = async (url, opts = {}) => {
   $('.modal #sOKey').value = 'sk-or-test'; [...$$('.modal footer button')].find((b) => b.textContent === '저장').click(); await sleep(60);
   eq(ev('[S.settings.provider, S.settings.openai.model, S.settings.openai.cr, S.secrets.openaiKey]'), ['openai', 'google/gemini-4-argon', 0.1, 'sk-or-test']); eq(ev('LLM.modelId'), 'google/gemini-4-argon');
   ev("S.settings.provider='anthropic'; saveSettings()");
+  // Argon 배치 프리셋 (저장하지 않고 닫기)
+  $('#btnSettings').click(); await sleep(40); $('.modal [data-p=openrouter-batch]').click(); await sleep(20);
+  eq([$('.modal #sOModel').value, $('.modal #sOIn').value, $('.modal #sOOut').value, $('.modal #sOCr').value], ['google/gemini-4-argon:batch', '1', '5', '0.05']); ev('Modal.closeAll()'); eq(ev('S.settings.openai.model'), 'google/gemini-4-argon');
+  // 배치 모델로 대화: 접수 → 처리 중 카드 → 확인 → 답 + 반값 장부
+  $('[data-act=chatNew]').click(); await sleep(40);
+  { const opts = $$('#modelSel option').map((o) => o.textContent); ok(opts.some((t) => t.includes('Sonnet 5.5 배치')) && opts.some((t) => t.includes('Opus 5.5 배치')) && !opts.some((t) => /Fable/.test(t)), '모델 목록: ' + opts.join('|')); }
+  { const sel = $('#modelSel'); sel.value = 'claude-sonnet-5-5:batch'; sel.dispatchEvent(new W.Event('change')); await sleep(300); ok($('#estText').textContent.includes('배치(반값)'), '배치 표시'); }
+  const ledgerBefore = ev('S.ledger.length'); const remBefore = ev('Budget.remaining()');
+  $('#chatInput').value = '린디웨의 말투를 정리해줘'; $('#sendBtn').click(); await sleep(200);
+  ok($('#msgs').textContent.includes('배치 처리 중') && $('#msgs [data-act=batchCheck]'), '처리 중 카드'); eq(bat.params.model, 'claude-sonnet-5-5'); ok(!('tools' in bat.params)); eq(ev('S.batches.length'), 1);
+  $('#msgs [data-act=batchCheck]').click(); await sleep(150); ok($('#msgs').textContent.includes('배치 처리 중'), '아직 처리 중');
+  bat.status = 'ended'; $('#msgs [data-act=batchCheck]').click(); await sleep(250);
+  ok($('#msgs').textContent.includes('배치로 받은 분석 결과입니다.') && !$('#msgs').textContent.includes('배치 처리 중'), '답이 붙음'); eq(ev('S.ledger.length'), ledgerBefore + 1);
+  near(ev('Budget.remaining()'), remBefore - (2000 * 1 + 400 * 5) * 1e-6); eq(ev('S.batches[0].status'), 'imported'); ok($('#msgs .turnsum'), '턴 요약 표시');
   const bk = await ev('Settings.backup(false)'); ok(bk.files.length >= 5 && bk.chats.length >= 1 && bk.ledger.length >= 4 && !bk.secrets, '백업 내용');
   ok(errors.length === 0, '콘솔 오류 없음: ' + errors.join('\n').slice(0, 800));
   console.log(`ui OK (${n} assertions)`); process.exit(0);

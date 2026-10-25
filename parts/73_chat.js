@@ -24,6 +24,7 @@ const Chat = {
     let h = '';
     if (!msgs.length) h = this.welcome();
     msgs.forEach((m, i) => {
+      if (m.local && m.kind === 'batch') { h += Batch.card(m); return; }
       if (m.local) { h += m.role === 'user' ? `<div class="msg user"><div class="bubble">${esc(m.md)}</div></div>` : `<div class="msg ai local ${m.kind || ''}"><div class="bubble"><div class="md">${renderMd(m.md)}</div></div></div>`; return; }
       if (m.toolResults) return;
       if (m.role === 'user') { const t = (m.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n'); h += `<div class="msg user"><div class="bubble">${esc(t)}</div></div>`; return; }
@@ -96,6 +97,7 @@ const Chat = {
     try {
       const e = estimatePrompt(c, ta ? ta.value : ''); const b = Budget.state();
       el.innerHTML = `입력 약 ${kfmt(e.total)} 토큰 · 예상 ${usd(e.warm ? e.costWarm : e.costCold)}${e.warm ? ' <span title="이전 호출의 캐시가 살아 있다고 가정">(캐시 적중)</span>' : ' <span title="캐시가 식었거나 첫 호출">(캐시 없음)</span>'} · <a href="#" data-act="countExact">정확히</a>${this.exact ? ` <b>${fmtN(this.exact)}</b>` : ''}${b.level !== 'ok' ? ` · <span class="${b.level === 'stop' ? 'err' : 'warn'}">예산 ${b.pct.toFixed(0)}%</span>` : ''}`;
+      if (isBatchModel(e.model)) el.innerHTML += ' · <b title="Message Batches API: 토큰 단가 50%, 보통 몇 분~몇 시간(최대 24시간). 도구·파일 색인 없이 한 번에 답합니다.">배치(반값)</b>';
     } catch (er) { el.textContent = ''; }
   },
   setBusy(b) { const s = document.getElementById('sendBtn'); if (!s) return; s.textContent = b ? '중단' : '전송'; s.classList.toggle('danger', b); s.classList.toggle('primary', !b); },
@@ -169,3 +171,7 @@ function chatToMd(c) {
   }
   return out.join('\n');
 }
+ACT.batchCheck = async (t) => { const j = Batch.find(t.dataset.cid); if (!j) return; UI.toast('확인 중…', 1200); const st = await Batch.check(j); if (st === 'submitted') UI.toast(j.lastErr && j.checked ? '⚠ ' + j.lastErr : '아직 처리 중이에요.'); };
+ACT.batchCancel = async (t) => { if (await dlg.confirm('이 배치를 취소할까요? (이미 처리된 부분이 있으면 요금이 일부 붙을 수 있어요)', { ok: '취소 요청' })) await Batch.cancel(t.dataset.cid); };
+ACT.batchRetry = (t) => Batch.retry(t.dataset.cid);
+ACT.batchDrop = (t) => Batch.drop(t.dataset.cid);

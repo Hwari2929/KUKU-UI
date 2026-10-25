@@ -152,7 +152,7 @@ async function postWithRetry(url, init, { signal, onRetry, retries = 3 } = {}) {
    실패해도 이미 청구된 토큰은 e.partial = {content, usage} 로 알려 장부에 남긴다. */
 async function anthropicStream(req, cb = {}) {
   if (!S.secrets.apiKey) throw new ApiError('Anthropic API 키가 없습니다 (설정 → API).', { kind: 'nokey' });
-  const body = buildBody(req); const t0 = Date.now();
+  const body = buildBody({ ...req, model: apiModel(req.model) }); const t0 = Date.now();
   const res = await postWithRetry(S.settings.anthropicBase.replace(/\/+$/, '') + '/v1/messages', { method: 'POST', headers: anthropicHeaders(), body: JSON.stringify(body) }, { signal: cb.signal, onRetry: cb.onRetry });
   const blocks = []; let usage = zeroUsage(), stop = null, mid = '', mdl = req.model, started = false, textSoFar = 0;
   const partialUsage = () => { const u = { ...usage }; if (!u.output) u.output = Math.ceil(textSoFar / 1.2); return u; };
@@ -243,7 +243,7 @@ const LLM = {
   async count(req) {
     if (this.provider === 'openai') { const t = JSON.stringify([req.sys, req.tools, req.messages]); return { tokens: estTokens(t), approx: true }; }
     if (!S.secrets.apiKey) throw new ApiError('Anthropic API 키가 없습니다.', { kind: 'nokey' });
-    const b = buildBody({ ...req, stream: false, maxTokens: 1 }); delete b.max_tokens; delete b.stream;
+    const b = buildBody({ ...req, model: apiModel(req.model), stream: false, maxTokens: 1 }); delete b.max_tokens; delete b.stream;
     const res = await postWithRetry(S.settings.anthropicBase.replace(/\/+$/, '') + '/v1/messages/count_tokens', { method: 'POST', headers: anthropicHeaders(), body: JSON.stringify(b) }, { retries: 1 });
     const j = await res.json(); return { tokens: j.input_tokens, approx: false };
   },

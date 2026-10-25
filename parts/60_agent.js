@@ -1,6 +1,6 @@
 /* ═══════════ 60 · 대화 저장 · 에이전트 턴 루프 ═══════════ */
 const Chats = {
-  async load() { S.chats = (await DB.all('chats')).sort((a, b) => b.updated - a.updated); },
+  async load() { S.chats = (await DB.all('chats')).sort((a, b) => b.updated - a.updated); for (const c of S.chats) if (c.model && !S.settings.models[c.model]) c.model = ''; },   // 지워진 모델(Fable 등)은 기본값으로
   get(id) { return S.chats.find((c) => c.id === id) || null; },
   create(title = '새 대화') {
     const c = { id: uid('c'), title, created: Date.now(), updated: Date.now(), skill: '', model: '', messages: [] };
@@ -43,12 +43,12 @@ function compactHistory(chat) {
 /* ── 호출 전 어림 (입력창 아래 표시용) ── */
 function estimatePrompt(chat, text) {
   const { blocks, skill } = buildSystem(chat); const model = (skill && skill.model) || chat.model || LLM.modelId;
-  const tools = toolsFor(skill); const msgs = Chats.api(chat);
+  const isB = isBatchModel(model); const tools = isB ? [] : toolsFor(skill); const msgs = Chats.api(chat);
   const sysT = estTokens(blocks.map((b) => b.text).join('\n')), toolT = estTokens(JSON.stringify(tools)), hist = msgTokens(msgs), cur = estTokens(text || '');
   const total = sysT + toolT + hist + cur;
   const last = [...S.ledger].reverse().find((e) => e.chatId === chat.id);
   const ttlMs = (S.settings.cacheTTL === '1h' ? 3600 : 300) * 1000;
-  const warm = last && Date.now() - last.ts < ttlMs;
+  const warm = !isB && last && Date.now() - last.ts < ttlMs;
   const cached = warm ? Math.min(total - cur, last.usage.input + last.usage.cacheRead + last.usage.cw5 + last.usage.cw1h) : 0;
   return { model, total, sys: sysT, tools: toolT, hist, cur, cached, warm: !!warm, costCold: estimateCost(model, total, 0, 0), costWarm: estimateCost(model, total, cached, 0), ctx: (S.settings.models[model] || {}).ctx || 200000 };
 }
@@ -157,6 +157,10 @@ async function submit(chat, raw, { suffix = '' } = {}) {
     chat.skill = sl.skill; Chats.save(chat); UI.chat(chat.id);
     if (!sl.rest) { addLocal(chat, sl.note, 'notice'); return { local: true }; }
     body = sl.rest; addLocal(chat, sl.note, 'notice');
+  }
+  if (LLM.provider !== 'openai') {   // 배치 모델이 골라져 있으면 스트리밍 대신 배치로 접수
+    const sk = chat.skill ? Skills.find(chat.skill) : null; const model = (sk && sk.model) || chat.model || S.settings.model;
+    if (isBatchModel(model)) return Batch.send(chat, body + suffix, model);
   }
   return runTurn(chat, body + suffix);
 }
