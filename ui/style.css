@@ -95,7 +95,7 @@ input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent)}
 .ed .le{text-decoration:underline wavy var(--err);text-underline-offset:3px;text-decoration-thickness:1px}.ed .lw{text-decoration:underline wavy var(--warn);text-underline-offset:3px;text-decoration-thickness:1px}.ed .li2{text-decoration:underline dotted var(--info);text-underline-offset:3px}
 .ed .fh{background:color-mix(in srgb,var(--warn) 35%,transparent);border-radius:3px}.ed .fc{background:color-mix(in srgb,var(--accent) 45%,transparent);border-radius:3px}
 .ed .lnx{display:block}
-#findbar{display:flex;gap:6px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--panel2);flex-wrap:wrap}#findbar input{width:150px;min-height:32px;padding:3px 8px}
+#findbar{display:flex;gap:6px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--panel2);flex-wrap:wrap}#findbar input{width:150px;min-height:32px;padding:3px 8px}#findbar.pv #findR,#findbar.pv [data-act=findRep],#findbar.pv [data-act=findRepAll]{display:none}#edScroll mark.pvhit{color:inherit;background:color-mix(in srgb,var(--warn) 35%,transparent);border-radius:3px}#edScroll mark.pvhit.fc{background:color-mix(in srgb,var(--accent) 45%,transparent)}
 #lintbar{border-top:1px solid var(--line);background:var(--panel2);max-height:34%;display:flex;flex-direction:column}
 #lintHead{display:flex;gap:10px;align-items:center;padding:4px 10px;font-size:13px;cursor:pointer;min-height:30px}
 #lintList{overflow:auto;padding:0 6px 6px;display:none}#lintbar.open #lintList{display:block}

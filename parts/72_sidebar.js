@@ -157,7 +157,7 @@ const Side = {
   },
   // ── 동기화
   renderSync(pane) {
-    const self = wsNow() === 'self'; const c = GH.cfg, sy = GH.sy(); const ch = FS.changes(); const sel = ch.filter((x) => !this.off.has(x.path)); const hasTok = !!S.secrets.ghToken;
+    const self = wsNow() === 'self'; const c = GH.cfg, sy = GH.sy(); const ch = FS.changes(); const sel = ch.filter((x) => !this.off.has(x.path) && x.st !== 'C'); const hasTok = !!S.secrets.ghToken;
     const names = { M: '수정', A: '추가', D: '삭제', C: '충돌' };
     const branchBlock = self
       ? `<div><b>${esc(c.owner)}/${esc(c.repo)}</b> <span class="tag warn">자가개선</span></div><div class="selfnote">작업 브랜치 <b class="mono">${esc(c.branch)}</b> (기준 <span class="mono">${esc(c.base)}</span>)<br>AI 가 고친 내용은 승인 후 작업 브랜치로만 올라가고 <b>${esc(c.base)} 에는 직접 올라가지 않습니다.</b> 병합은 GitHub 에서 직접 하세요.${sy.branch && sy.branch !== c.branch ? `<br><span class="warn">지금은 ${esc(sy.branch)} 에서 받은 상태 (작업 브랜치가 아직 없음 — 첫 푸시 때 만들어져요)</span>` : ''}</div>`
@@ -169,7 +169,7 @@ const Side = {
       <div class="inl" style="margin-top:8px"><button class="primary" data-act="doPull" style="flex:1">⬇ 받기 (Pull)</button><button class="sm" data-act="pullMore" title="더보기">⋯</button></div></div>
       <div class="sect">변경 ${ch.length}건</div>
       ${ch.length ? ch.map((x) => `<div class="tr" style="padding-left:2px"><input type="checkbox" data-act="selChange" data-p="${esc(x.path)}" ${this.off.has(x.path) ? '' : 'checked'} ${x.st === 'C' ? 'disabled' : ''}><span class="nm" data-act="fileOpen" data-p="${esc(x.path)}" title="${esc(x.path)}">${esc(self ? x.path.slice(SELF_PREFIX.length) : x.path)}</span>${H.badge(x.st)}<button class="more" style="opacity:.8" data-act="changeMore" data-p="${esc(x.path)}" data-st="${x.st}">⋯</button></div>`).join('') : '<div class="xs muted" style="padding:4px 8px">GitHub 와 같은 상태입니다</div>'}
-      ${ch.length ? `<textarea class="fld" id="cmsg" rows="2" placeholder="커밋 메시지" style="margin-top:8px">${esc(this.commitMsg)}</textarea><div class="inl" style="margin-top:6px"><button class="sm" data-act="autoMsg">자동 메시지</button><button class="primary" data-act="doPush" style="flex:1" ${hasTok && sel.length ? '' : 'disabled'}>⬆ 커밋 · 푸시 (${sel.length})</button></div>` : ''}
+      ${ch.length ? `<textarea class="fld" id="cmsg" rows="2" placeholder="커밋 메시지" style="margin-top:8px">${esc(this.commitMsg)}</textarea><div class="inl" style="margin-top:6px"><button class="sm" data-act="autoMsg">자동 메시지</button><button class="primary" data-act="doPush" style="flex:1" ${hasTok && sel.length ? '' : 'disabled'}>⬆ 커밋 · 푸시 (${sel.length})</button></div>${hasTok && sel.length ? '' : `<div class="xs muted" style="margin-top:4px">${!hasTok ? '비활성: GitHub 토큰이 없어요 (설정 → GitHub).' : '비활성: 체크된 변경이 없어요' + (ch.some((x) => x.st === 'C') ? ' (충돌 파일은 해결한 뒤에 올릴 수 있어요).' : '.')}</div>`}` : ''}
       ${selfBlock}
       <div class="sect">되돌리기 기록 <button class="sm ghost" data-act="openSnaps">전체 보기</button></div>
       ${[...S.snaps].reverse().slice(0, 5).map((s) => `<div class="tr" data-act="snapRestore" data-id="${s.id}"><span class="nm">${esc(s.label)}</span><span class="xs muted">${fmtDT(s.ts)} · ${s.files.length}</span></div>`).join('') || '<div class="xs muted" style="padding:4px 8px">아직 없음</div>'}`;

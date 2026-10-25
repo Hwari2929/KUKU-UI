@@ -43,6 +43,8 @@ function renderSpans(ln, ranges) {
   }
   return out;
 }
+// 단축키용 글쇠 이름. 한글 입력 상태에서는 e.key 가 'ㄹ' 처럼 나오므로 물리 글쇠(e.code)로 되돌린다.
+function keyOf(e) { const k = String(e.key || '').toLowerCase(); if (/^[a-z]$/.test(k)) return k; const m = /^Key([A-Z])$/.exec(e.code || ''); return m ? m[1].toLowerCase() : k; }
 function highlightHTML(text, { lint = [], finds = [], cur = -1 } = {}) {
   const lines = text.split('\n'); const st = { fence: false, scene: /^##\s*본문/m.test(text) };
   const lm = new Map(); for (const it of lint) { if (!lm.has(it.line)) lm.set(it.line, []); lm.get(it.line).push(it); }
@@ -151,7 +153,7 @@ const Ed = {
     const body = document.getElementById('edBody'); if (!body) return; const f = this.file;
     this.ta = null; this.hl = null; this.scrollEl = null;
     if (!f) { body.innerHTML = `<div class="empty"><h3>열린 파일이 없습니다</h3><div>왼쪽 파일 목록에서 문서를 고르거나 <b>⌘P</b> 로 빠르게 열 수 있어요.<br>처음이라면 <b>동기화</b> 탭에서 GitHub 문서를 불러오세요.</div><div style="margin-top:14px"><button class="primary" data-act="sideTab" data-tab="sync">GitHub 에서 불러오기</button> <button data-act="newFile">새 파일</button></div></div>`; document.getElementById('lintbar').classList.add('hidden'); this.renderStatus(); return; }
-    body.innerHTML = `<div id="edBanner"></div><div id="findbar" class="${this.find.open && S.ui.view === 'edit' ? '' : 'hidden'}"></div><div id="edScroll"></div>`;
+    body.innerHTML = `<div id="edBanner"></div><div id="findbar" class="${this.find.open && (S.ui.view === 'edit' || S.ui.view === 'preview') ? '' : 'hidden'}${S.ui.view === 'preview' ? ' pv' : ''}"></div><div id="edScroll"></div>`;
     const sc = this.scrollEl = document.getElementById('edScroll');
     if (S.ui.view === 'edit') {
       sc.innerHTML = `<div class="ed ${S.ui.editorFont === 'mono' ? 'mono' : ''} ${S.ui.noWrap ? 'nowrap' : ''}"><pre aria-hidden="true"></pre><textarea spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="${esc(f.path)}"></textarea></div>`;
@@ -169,6 +171,7 @@ const Ed = {
       sc.innerHTML = `<div style="padding:14px 18px 60px"><div class="sm muted" style="margin-bottom:8px">${f.baseSha ? '마지막 동기화(GitHub) 내용과 비교' : '새 파일 (GitHub 에 아직 없음)'} · ${same ? '변경 없음' : (() => { const s = diffStat(base, f.content); return `<span class="ok">+${s.add}</span> <span class="err">−${s.del}</span>`; })()}</div>${diffHTML(base, f.content, 4)}</div>`;
     }
     this.renderBanner(); this.renderLintBar(); this.renderFind(); this.renderStatus();
+    if (S.ui.view === 'preview' && this.find.open) this.pvFind(false);
   },
   // ── 입력
   onInput() {
@@ -238,12 +241,12 @@ const Ed = {
       const mk = /\d/.test(m[2]) ? (parseInt(m[2], 10) + 1) + '.' : m[2]; this.replaceRange(s, s, '\n' + m[1] + mk + ' ');
       return this.keepCaret();
     }
-    if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); FS.flushNow(); UI.toast('저장됨 (이 기기에 자동 저장 중)'); return; }
+    if (mod && keyOf(e) === 's') { e.preventDefault(); FS.flushNow(); UI.toast('저장됨 (이 기기에 자동 저장 중)'); return; }
     if (mod && e.key === 'Enter' && e.altKey) { e.preventDefault(); this.openLinkAtCaret(); }
     if (e.altKey && e.key === 'Enter') { e.preventDefault(); this.openLinkAtCaret(); }
   },
   globalKeys(e) {
-    const mod = e.metaKey || e.ctrlKey; if (!mod) return; const k = e.key.toLowerCase();
+    const mod = e.metaKey || e.ctrlKey; if (!mod) return; const k = keyOf(e);
     if (k === 'p' && !e.shiftKey) { e.preventDefault(); Quick.open(); }
     else if (k === 'f' && !e.shiftKey && S.ui.cur && S.ui.mode !== 'chat') { e.preventDefault(); this.findOpen(); }
     else if (k === 'b') { e.preventDefault(); ACT.toggleSide(); }
@@ -258,13 +261,37 @@ const Ed = {
   async openLinkAtCaret() { const l = this.linkAt(); if (!l) return UI.toast('커서 위치에 [[링크]] 가 없음'); await openWikilink(l.target, l.heading); },
   // ── 찾기 / 바꾸기
   findOpen(q) {
-    if (S.ui.view !== 'edit') { S.ui.view = 'edit'; this.renderAll(); }
-    this.find.open = true; if (q != null) this.find.q = q; else if (this.ta && this.ta.selectionStart !== this.ta.selectionEnd) this.find.q = this.ta.value.slice(this.ta.selectionStart, this.ta.selectionEnd).split('\n')[0];
+    if (S.ui.view !== 'edit' && S.ui.view !== 'preview') { S.ui.view = 'edit'; this.renderAll(); }   // 변경 비교 화면에서는 편집 화면으로
+    const pv = S.ui.view === 'preview';
+    this.find.open = true; if (q != null) this.find.q = q;
+    else if (pv) { const sel = String(window.getSelection ? window.getSelection() : '').split('\n')[0].trim(); if (sel && sel.length <= 200) this.find.q = sel; }
+    else if (this.ta && this.ta.selectionStart !== this.ta.selectionEnd) this.find.q = this.ta.value.slice(this.ta.selectionStart, this.ta.selectionEnd).split('\n')[0];
     this.renderFind(); this.doFind(true); const i = document.getElementById('findQ'); if (i) { i.focus(); i.select(); }
   },
-  findClose() { this.find.open = false; this.renderFind(); this.paint(); if (this.ta) this.ta.focus({ preventScroll: true }); },
+  findClose() { this.find.open = false; this.pvClear(); this.renderFind(); this.paint(); if (this.ta) this.ta.focus({ preventScroll: true }); },
+  // ── 미리보기 화면에서 찾기: 보이는 글자에서 찾아 <mark> 로 칠한다 (바꾸기는 편집 화면에서만)
+  pvClear() { const sc = this.scrollEl; if (!sc) return; for (const m of [...sc.querySelectorAll('mark.pvhit')]) { const p = m.parentNode; p.replaceChild(document.createTextNode(m.textContent), m); p.normalize(); } },
+  pvFind(jump) {
+    const sc = this.scrollEl; if (!sc) return; this.pvClear(); const q = this.find.q; const marks = [];
+    if (q) {
+      const ql = q.toLowerCase(); const walker = document.createTreeWalker(sc, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentNode && /^(SCRIPT|STYLE)$/.test(n.parentNode.nodeName) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+      const nodes = []; for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
+      for (const n of nodes) {
+        const lo = n.nodeValue.toLowerCase(); let i = lo.indexOf(ql); if (i < 0 || marks.length >= 5000) continue; const parts = []; let last = 0;
+        while (i !== -1 && marks.length + parts.length < 5000) { parts.push([i, i + q.length]); last = i + q.length; i = lo.indexOf(ql, Math.max(last, i + 1)); }
+        const txt = n.nodeValue; const frag = document.createDocumentFragment(); let at = 0;
+        for (const [s, e] of parts) { if (s > at) frag.appendChild(document.createTextNode(txt.slice(at, s))); const m = document.createElement('mark'); m.className = 'pvhit fh'; m.textContent = txt.slice(s, e); frag.appendChild(m); marks.push(m); at = e; }
+        if (at < txt.length) frag.appendChild(document.createTextNode(txt.slice(at))); n.parentNode.replaceChild(frag, n);
+      }
+    }
+    this.find.hits = marks; if (this.find.i >= marks.length || jump) this.find.i = 0; this.pvShow(jump);
+  },
+  pvShow(scroll) {
+    const ms = this.find.hits; ms.forEach((m, i) => m.classList.toggle('fc', i === this.find.i)); const m = ms[this.find.i];
+    if (m && scroll && m.scrollIntoView) m.scrollIntoView({ block: 'center' }); this.renderFind();
+  },
   renderFind() {
-    const fb = document.getElementById('findbar'); if (!fb) return; fb.classList.toggle('hidden', !(this.find.open && S.ui.view === 'edit'));
+    const fb = document.getElementById('findbar'); if (!fb) return; fb.classList.toggle('hidden', !(this.find.open && (S.ui.view === 'edit' || S.ui.view === 'preview'))); fb.classList.toggle('pv', S.ui.view === 'preview');
     if (!this.find.open) return;
     if (!fb.dataset.built) {
       fb.dataset.built = '1';
@@ -278,15 +305,16 @@ const Ed = {
     fb.querySelector('#findN').textContent = this.find.q ? (this.find.hits.length ? `${this.find.i + 1}/${this.find.hits.length}` : '없음') : '';
   },
   doFind(jump) {
+    if (S.ui.view === 'preview') return this.pvFind(jump);
     this.computeHits(); const hits = this.find.hits;
     if (jump && hits.length && this.ta) { const p = this.ta.selectionStart; const k = hits.findIndex((h) => h.s >= p); this.find.i = k < 0 ? 0 : k; }
     this.paint(); this.renderFind(); if (jump && hits.length) this.showHit();
   },
   showHit() { const h = this.find.hits[this.find.i]; if (!h || !this.ta) return; this.ta.setSelectionRange(h.s, h.e); const y = this.yOfOffset(h.s); this.scrollEl.scrollTop = Math.max(0, y - this.scrollEl.clientHeight * 0.3); },
-  stepFind(d) { const n = this.find.hits.length; if (!n) return; this.find.i = (this.find.i + d + n) % n; this.paint(); this.renderFind(); this.showHit(); },
-  replaceOne() { const h = this.find.hits[this.find.i]; if (!h) return; this.replaceRange(h.s, h.e, this.find.r); this.doFind(false); this.renderFind(); },
+  stepFind(d) { const n = this.find.hits.length; if (!n) return; this.find.i = (this.find.i + d + n) % n; if (S.ui.view === 'preview') return this.pvShow(true); this.paint(); this.renderFind(); this.showHit(); },
+  replaceOne() { if (S.ui.view !== 'edit') return; const h = this.find.hits[this.find.i]; if (!h) return; this.replaceRange(h.s, h.e, this.find.r); this.doFind(false); this.renderFind(); },
   replaceAll() {
-    if (!this.find.q || !this.find.hits.length) return; const t = this.ta.value, n = this.find.hits.length; let out = '', last = 0;
+    if (S.ui.view !== 'edit' || !this.find.q || !this.find.hits.length) return; const t = this.ta.value, n = this.find.hits.length; let out = '', last = 0;
     for (const h of this.find.hits) { out += t.slice(last, h.s) + this.find.r; last = h.e; } out += t.slice(last);
     this.replaceRange(0, t.length, out); this.find.hits = []; this.doFind(false); UI.toast(`${n}곳 바꿈 (⌘Z 로 되돌리기)`);
   },

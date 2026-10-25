@@ -136,6 +136,22 @@ const mockFetch = async (url, opts = {}) => {
   bat.status = 'ended'; $('#msgs [data-act=batchCheck]').click(); await sleep(250);
   ok($('#msgs').textContent.includes('배치로 받은 분석 결과입니다.') && !$('#msgs').textContent.includes('배치 처리 중'), '답이 붙음'); eq(ev('S.ledger.length'), ledgerBefore + 1);
   near(ev('Budget.remaining()'), remBefore - (2000 * 1 + 400 * 5) * 1e-6); eq(ev('S.batches[0].status'), 'imported'); ok($('#msgs .turnsum'), '턴 요약 표시');
+  // ── 미리보기에서 ⌘F (한글 입력 상태의 글쇠 'ㄹ' 포함) · 편집 화면 찾기 · 푸시 버튼 비활성 이유
+  { ev("Ed.open('lore/인물/린디웨.md')"); await sleep(60); const key = (o) => W.document.dispatchEvent(new W.KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...o }));
+    $('[data-act=edView][data-v=preview]').click(); await sleep(40); ok($('#edScroll .md'), '미리보기 표시');
+    key({ key: 'ㄹ', code: 'KeyF', metaKey: true }); await sleep(40); eq(ev('S.ui.view'), 'preview', '미리보기에서 편집 화면으로 튕기지 않음'); ok(!$('#findbar').classList.contains('hidden') && $('#findbar').classList.contains('pv'), '찾기 막대');
+    { const q = $('#findQ'); q.value = '비비안'; q.dispatchEvent(new W.Event('input')); await sleep(30); eq($$('#edScroll mark.pvhit').length, 1, '미리보기 일치 표시'); ok($('#findN').textContent === '1/1', $('#findN').textContent); ok($('#edScroll mark.pvhit').classList.contains('fc'), '현재 일치 강조');
+      q.value = '린디웨'; q.dispatchEvent(new W.Event('input')); await sleep(30); ok($$('#edScroll mark.pvhit').length >= 1); q.value = '없는말'; q.dispatchEvent(new W.Event('input')); await sleep(30); eq($$('#edScroll mark.pvhit').length, 0); ok($('#findN').textContent === '없음');
+      q.value = '비비안'; q.dispatchEvent(new W.Event('input')); await sleep(30); ok($('#edScroll .md').textContent.includes('비비안') && $('#edScroll .md a.wl, #edScroll .md').innerHTML.includes('pvhit'), '링크 안의 글자도 표시');
+      $('[data-act=findClose]').click(); await sleep(20); eq($$('#edScroll mark.pvhit').length, 0, '닫으면 표시 제거'); ok($('#findbar').classList.contains('hidden')); }
+    $('[data-act=edView][data-v=edit]').click(); await sleep(40); key({ key: 'f', code: 'KeyF', ctrlKey: true }); await sleep(40); ok(!$('#findbar').classList.contains('hidden') && !$('#findbar').classList.contains('pv'), '편집 화면 찾기'); $('[data-act=findClose]').click(); await sleep(20);
+    key({ key: 'ㅔ', code: 'KeyP', metaKey: true }); await sleep(40); ok($('.modal #qi'), '한글 상태에서도 ⌘P'); ev('Modal.closeAll()');
+    // 푸시 버튼: 토큰 없음 → 비활성 + 이유
+    { const keep = ev('S.secrets.ghToken'); ev("S.secrets.ghToken = ''"); ev("FS.set('lore/임시.md', '# 임시')"); $('#sideTabs [data-tab=sync]').click(); await sleep(40);
+      const pb = $('[data-act=doPush]'); ok(pb && pb.disabled && $('#sidePane').textContent.includes('토큰이 없어요'), '토큰 없으면 비활성 + 이유');
+      ev(`S.secrets.ghToken = ${JSON.stringify(keep)} || 'tok'`); ev('Side.render()'); await sleep(30); ok(!$('[data-act=doPush]').disabled, '토큰 있고 변경 체크되면 활성');
+      $('#sidePane [data-act=selChange]').click(); await sleep(30); ok($('[data-act=doPush]').disabled && $('#sidePane').textContent.includes('체크된 변경이 없어요'), '체크 해제하면 비활성');
+      ev("FS.remove('lore/임시.md'); Side.off.clear(); Side.render()"); ev(`S.secrets.ghToken = ${JSON.stringify(keep)}`); } }
   // ── 질문·답변 수정 / 삭제 / 다시 생성 버튼
   { $('[data-act=chatNew]').click(); await sleep(40); ev('S.run = { busy: false, abort: null, chatId: null }'); anth = [reply({ text: '첫 답변입니다.' })];
     $('#chatInput').value = '버튼 시험 질문'; $('#sendBtn').click(); await sleep(300);
