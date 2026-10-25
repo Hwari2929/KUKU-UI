@@ -136,6 +136,18 @@ const mockFetch = async (url, opts = {}) => {
   bat.status = 'ended'; $('#msgs [data-act=batchCheck]').click(); await sleep(250);
   ok($('#msgs').textContent.includes('배치로 받은 분석 결과입니다.') && !$('#msgs').textContent.includes('배치 처리 중'), '답이 붙음'); eq(ev('S.ledger.length'), ledgerBefore + 1);
   near(ev('Budget.remaining()'), remBefore - (2000 * 1 + 400 * 5) * 1e-6); eq(ev('S.batches[0].status'), 'imported'); ok($('#msgs .turnsum'), '턴 요약 표시');
+  // ── 질문·답변 수정 / 삭제 / 다시 생성 버튼
+  { $('[data-act=chatNew]').click(); await sleep(40); ev('S.run = { busy: false, abort: null, chatId: null }'); anth = [reply({ text: '첫 답변입니다.' })];
+    $('#chatInput').value = '버튼 시험 질문'; $('#sendBtn').click(); await sleep(300);
+    const btn = (label) => [...$$('.modal footer button')].find((b) => b.textContent === label);
+    ok($('#msgs .msg.user [data-act=msgEdit]') && $('#msgs .msg.user [data-act=msgDelTurn]'), '질문 수정·삭제 버튼'); ok($('#msgs .msg.ai [data-act=msgEdit]'), '답변 수정 버튼'); ok($('#msgs .turnbar [data-act=msgReroll]') && $('#msgs .turnbar [data-act=msgDelReply]') && !$('#msgs .vsw'), '버튼줄');
+    $('#msgs .msg.ai [data-act=msgEdit]').click(); await sleep(40); { const ta = $('.modal textarea'); ok(ta && ta.value === '첫 답변입니다.', '수정 창에 현재 내용'); ta.value = '고친 답변입니다.'; btn('저장').click(); await sleep(40); }
+    ok($('#msgs').textContent.includes('고친 답변입니다.') && $('#msgs').textContent.includes('수정됨'), '수정 반영');
+    anth = [reply({ text: '두 번째 버전입니다.' })]; anthReqs.length = 0; $('#msgs [data-act=msgReroll]').click(); await sleep(350);
+    ok($('#msgs').textContent.includes('두 번째 버전입니다.') && !$('#msgs').textContent.includes('고친 답변입니다.'), '새 답'); ok($('#msgs .vsw').textContent.includes('2 / 2'), '버전 표시'); eq(anthReqs.length, 1); eq(anthReqs[0].messages.length, 1, '같은 맥락·같은 질문'); eq($$('#msgs .msg.user').length, 1, '질문 중복 없음');
+    $('#msgs [data-act=msgVer][data-d="-1"]').click(); await sleep(40); ok($('#msgs').textContent.includes('고친 답변입니다.') && $('#msgs .vsw').textContent.includes('1 / 2'), '원래 답으로 돌아감'); ok($('#msgs [data-act=msgVer][data-d="-1"]').disabled);
+    $('#msgs [data-act=msgDelReply]').click(); await sleep(40); btn('삭제').click(); await sleep(60); ok($('#msgs').textContent.includes('두 번째 버전입니다.') && !$('#msgs .vsw'), '지우면 다른 버전이 나타나고 전환 UI 정리');
+    $('#msgs .msg.user [data-act=msgDelTurn]').click(); await sleep(40); btn('삭제').click(); await sleep(60); eq(ev('Chat.cur.messages.length'), 0, '질문·응답 삭제'); }
   // ── 자가개선 작업공간: 전환 · 소스 받기 · 설정집과 분리 · 빌드 점검
   { const loreN = ev('FS.paths().length'); ok(loreN > 0);
     $('#wsSeg [data-ws=self]').click(); await sleep(60);

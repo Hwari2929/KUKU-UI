@@ -23,21 +23,39 @@ const Chat = {
     const tm = new Map(Ledger.turns(1e6, c.id).map((t) => [t.turnId, t])); const lastIdx = new Map(); msgs.forEach((m, i) => { if (m.meta && m.meta.turnId && !m.local) lastIdx.set(m.meta.turnId, i); });
     let h = '';
     if (!msgs.length) h = this.welcome();
+    const lastT = Chats.lastTurn(c); const barAfter = new Map();   // 응답 묶음의 마지막 메시지 뒤에 붙는 버튼줄 (질문마다 하나)
+    msgs.forEach((m, i) => { if (isUserInput(m)) { const t = Chats.turnAt(c, i); barAfter.set(t.to - 1, t); } });
     msgs.forEach((m, i) => {
-      if (m.local && m.kind === 'batch') { h += Batch.card(m); return; }
-      if (m.local) { h += m.role === 'user' ? `<div class="msg user"><div class="bubble">${esc(m.md)}</div></div>` : `<div class="msg ai local ${m.kind || ''}"><div class="bubble"><div class="md">${renderMd(m.md)}</div></div></div>`; return; }
-      if (m.toolResults) return;
-      if (m.role === 'user') { const t = (m.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n'); h += `<div class="msg user"><div class="bubble">${esc(t)}</div></div>`; return; }
-      const next = msgs[i + 1]; const results = next && next.toolResults ? next.content : [];
-      const text = m.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n\n'); const uses = m.content.filter((b) => b.type === 'tool_use');
-      h += `<div class="msg ai">${text ? `<div class="bubble"><div class="md">${renderMd(text)}</div></div>` : ''}${uses.length ? `<div class="tools">${uses.map((u) => this.toolCard(u, results.find((r) => r.tool_use_id === u.id), false)).join('')}</div>` : ''}`;
-      if (m.meta && m.meta.turnId && lastIdx.get(m.meta.turnId) === i && tm.get(m.meta.turnId)) h += this.turnSummary(tm.get(m.meta.turnId));
-      h += '</div>';
+      h += this.msgHtml(c, m, i, msgs, tm, lastIdx);
+      const bt = barAfter.get(i); if (bt) h += this.turnBar(c, bt, !!lastT && lastT.inp === bt.inp);
     });
     h += '<div id="liveHold"></div>';
     box.innerHTML = h; $$('.codeblk', box).forEach((cb) => this.decorateCode(cb));
     if (S.run.busy && S.run.chatId === c.id && this._live) this.renderLive(this._live);
     if (this.stick) this.scrollEnd();
+  },
+  msgHtml(c, m, i, msgs, tm, lastIdx) {
+    if (m.local && m.kind === 'batch') return Batch.card(m);
+    if (m.local) return m.role === 'user' ? `<div class="msg user"><div class="bubble">${esc(m.md)}</div></div>` : `<div class="msg ai local ${m.kind || ''}"><div class="bubble"><div class="md">${renderMd(m.md)}</div></div></div>`;
+    if (m.toolResults) return '';
+    const edited = m.edited ? '<span class="muted xs">수정됨</span>' : '';
+    if (m.role === 'user') { const t = Chats.textOf(m); return `<div class="msg user"><div class="ucol"><div class="bubble">${esc(t)}</div><div class="macts">${edited}<button class="mini" data-act="msgEdit" data-i="${i}" title="질문 내용 고치기">✎ 수정</button><button class="mini" data-act="msgDelTurn" data-i="${i}" title="이 질문과 응답을 모두 지우기">🗑 삭제</button></div></div></div>`; }
+    const next = msgs[i + 1]; const results = next && next.toolResults ? next.content : [];
+    const text = Chats.textOf(m); const uses = m.content.filter((b) => b.type === 'tool_use');
+    let h = `<div class="msg ai">${text ? `<div class="bubble"><div class="md">${renderMd(text)}</div></div>` : ''}${uses.length ? `<div class="tools">${uses.map((u) => this.toolCard(u, results.find((r) => r.tool_use_id === u.id), false)).join('')}</div>` : ''}`;
+    if (text) h += `<div class="macts">${edited}<button class="mini" data-act="msgEdit" data-i="${i}" title="답변 내용 고치기 (이후 대화의 맥락에 반영)">✎ 수정</button></div>`;
+    if (m.meta && m.meta.turnId && lastIdx.get(m.meta.turnId) === i && tm.get(m.meta.turnId)) h += this.turnSummary(tm.get(m.meta.turnId));
+    return h + '</div>';
+  },
+  // 질문 하나의 응답이 끝난 자리에 붙는 버튼줄: 다시 생성 · 보관된 다른 응답 넘겨 보기 · 응답 삭제
+  turnBar(c, t, isLast) {
+    const inp = c.messages[t.inp]; const has = t.to > t.from; const n = inp.vers ? inp.vers.length : 0; const vi = inp.vi || 0; let b = '';
+    if (isLast) {
+      b += `<button class="mini" data-act="msgReroll" title="같은 맥락·같은 질문으로 다른 답을 받아요. 지금 답은 그대로 보관됩니다.">↻ ${has ? '다시 생성' : '답 받기'}</button>`;
+      if (n > 1) b += `<span class="vsw"><button class="mini" data-act="msgVer" data-d="-1" ${vi <= 0 ? 'disabled' : ''} title="이전 응답">◀</button><span>${vi + 1} / ${n}</span><button class="mini" data-act="msgVer" data-d="1" ${vi >= n - 1 ? 'disabled' : ''} title="다음 응답">▶</button></span>`;
+    } else if (n > 1) b += `<span class="muted xs">보관된 다른 응답 ${n - 1}개</span>`;
+    if (has) b += `<button class="mini" data-act="msgDelReply" data-i="${t.inp}" title="질문은 두고 응답만 지우기">🗑 응답 삭제</button>`;
+    return b ? `<div class="turnbar">${b}</div>` : '';
   },
   welcome() {
     if (wsNow() === 'self') return `<div class="empty"><h3>🛠 자가개선</h3><div>이 도구 자신의 소스(KUKU-UI)를 AI 와 함께 고치는 모드예요. ${FS.paths().length ? `소스 ${FS.paths().length}개를 읽을 수 있어요.` : '먼저 사이드바 <b>동기화</b> 탭에서 소스를 받아 오세요.'}</div><div class="sm" style="margin-top:12px;text-align:left;max-width:420px;margin-left:auto;margin-right:auto">• "예산 패널에 일별 막대그래프 추가" 처럼 원하는 변화를 말해 주세요.<br>• AI 의 수정안은 <b>승인 대기</b>에 쌓이고, 승인하면 이 기기의 소스에 반영돼요.<br>• 동기화 탭에서 <b>빌드 점검 → 미리보기 → 커밋·푸시(작업 브랜치) → PR</b> 순서로 진행합니다. 테스트는 Claude Code/로컬에서 돌려 주세요.</div></div>`;
@@ -99,7 +117,7 @@ const Chat = {
     try {
       const e = estimatePrompt(c, ta ? ta.value : ''); const b = Budget.state();
       el.innerHTML = `입력 약 ${kfmt(e.total)} 토큰 · 예상 ${usd(e.warm ? e.costWarm : e.costCold)}${e.warm ? ' <span title="이전 호출의 캐시가 살아 있다고 가정">(캐시 적중)</span>' : ' <span title="캐시가 식었거나 첫 호출">(캐시 없음)</span>'} · <a href="#" data-act="countExact">정확히</a>${this.exact ? ` <b>${fmtN(this.exact)}</b>` : ''}${b.level !== 'ok' ? ` · <span class="${b.level === 'stop' ? 'err' : 'warn'}">예산 ${b.pct.toFixed(0)}%</span>` : ''}`;
-      if (isBatchModel(e.model)) el.innerHTML += ' · <b title="Message Batches API: 토큰 단가 50%, 보통 몇 분~몇 시간(최대 24시간). 도구·파일 색인 없이 한 번에 답합니다.">배치(반값)</b>';
+      if (isBatchModel(e.model)) el.innerHTML += ' · <b title="Message Batches API: 토큰 단가 50%, 보통 몇 분~몇 시간(최대 24시간). 도구·파일 색인 없이 한 번에 답합니다.">배치(반값)</b>' + (Batch.needsProxy() ? ' · <b class="err" title="' + esc(Batch.corsMsg()) + '">⚠ 프록시 필요</b>' : '');
     } catch (er) { el.textContent = ''; }
   },
   setBusy(b) { const s = document.getElementById('sendBtn'); if (!s) return; s.textContent = b ? '중단' : '전송'; s.classList.toggle('danger', b); s.classList.toggle('primary', !b); },
@@ -173,6 +191,36 @@ function chatToMd(c) {
   }
   return out.join('\n');
 }
+// ── 질문·답변 수정 / 삭제 / 다시 생성
+const msgGuard = () => { const lock = chatLocked(Chat.cur); if (lock) { UI.toast(lock); return false; } return true; };
+Chat.renderKeep = function () { const box = document.getElementById('msgs'); const y = box ? box.scrollTop : 0; const st = this.stick; this.stick = false; this.render(); if (box) box.scrollTop = y; this.stick = st; this.renderHead(); this.renderEst(); };
+ACT.msgEdit = async (t) => {
+  if (!msgGuard()) return; const c = Chat.cur, i = +t.dataset.i, m = c.messages[i]; if (!m) return; const user = m.role === 'user';
+  const v = await dlg.prompt(user ? '질문 내용' : '답변 내용', Chats.textOf(m), { title: user ? '질문 수정' : '답변 수정', ok: '저장', multiline: true, hint: '저장해도 이미 받은 다른 답이 다시 만들어지지는 않아요. 고친 내용은 이후 대화의 맥락으로 쓰입니다. (Ctrl/⌘+Enter 로 저장)' });
+  if (v == null) return; if (v === Chats.textOf(m)) return;
+  if (!Chats.editText(c, i, v)) return UI.toast('내용이 비어 있으면 저장할 수 없어요.'); Chat.renderKeep(); UI.toast('수정했어요.');
+};
+ACT.msgDelTurn = async (t) => {
+  if (!msgGuard()) return; const c = Chat.cur, i = +t.dataset.i; const tt = Chats.turnAt(c, i); if (!tt) return; const n = tt.to - tt.from;
+  const inp = c.messages[tt.inp]; const alts = inp.vers ? inp.vers.length - 1 : 0;
+  if (!(await dlg.confirm(`이 질문${n ? '과 응답' : ''}을 지울까요?${alts ? `\n(보관된 다른 응답 ${alts}개도 함께 지워져요)` : ''}\n비용 기록은 장부에 남습니다.`, { danger: true, ok: '삭제' }))) return;
+  Chats.deleteTurn(c, i); Chat.renderKeep();
+};
+ACT.msgDelReply = async (t) => {
+  if (!msgGuard()) return; const c = Chat.cur, i = +t.dataset.i; const tt = Chats.turnAt(c, i); if (!tt) return; const inp = c.messages[tt.inp]; const last = Chats.lastTurn(c); const isLast = !!last && last.inp === tt.inp; const alts = inp.vers ? inp.vers.length - 1 : 0;
+  const extra = alts ? (isLast ? `\n(보관된 다른 응답 ${alts}개 중 하나가 대신 나타나요)` : `\n(보관된 다른 응답 ${alts}개도 함께 지워져요)`) : '';
+  if (!(await dlg.confirm(`이 응답을 지울까요? 질문은 남겨 둡니다.${extra}\n비용 기록은 장부에 남습니다.`, { danger: true, ok: '삭제' }))) return;
+  Chats.deleteReply(c, i); Chat.renderKeep();
+};
+ACT.msgReroll = async () => {
+  const c = Chat.cur; Chat.stick = true;
+  try { await regenerate(c); } catch (e) { reportErr(e); }
+  Chat.renderHead(); Chat.renderEst();
+};
+ACT.msgVer = (t) => {
+  if (!msgGuard()) return; const c = Chat.cur; const tt = Chats.lastTurn(c); if (!tt) return; const inp = c.messages[tt.inp];
+  if (Chats.switchVer(c, (inp.vi || 0) + +t.dataset.d)) { Chat.stick = true; Chat.render(); Chat.renderEst(); }
+};
 ACT.batchCheck = async (t) => { const j = Batch.find(t.dataset.cid); if (!j) return; UI.toast('확인 중…', 1200); const st = await Batch.check(j); if (st === 'submitted') UI.toast(j.lastErr && j.checked ? '⚠ ' + j.lastErr : '아직 처리 중이에요.'); };
 ACT.batchCancel = async (t) => { if (await dlg.confirm('이 배치를 취소할까요? (이미 처리된 부분이 있으면 요금이 일부 붙을 수 있어요)', { ok: '취소 요청' })) await Batch.cancel(t.dataset.cid); };
 ACT.batchRetry = (t) => Batch.retry(t.dataset.cid);

@@ -16,6 +16,7 @@ const Settings = {
       <div class="sect">Anthropic</div>
       ${fr('sKey', 'API 키', `<div class="inl"><input type="password" id="sKey" value="${esc(k.apiKey)}" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="sm" data-act="showKey" type="button">보기</button></div>`, '이 기기의 브라우저 저장소에만 보관됩니다 (백업에는 기본으로 빠짐).')}
       ${fr('sBase', '주소', tx('sBase', s.anthropicBase), '기본값 https://api.anthropic.com')}
+      ${fr('sBBase', '배치 프록시 주소', tx('sBBase', s.batchBase || '', 'https://내-프록시.workers.dev'), '선택. Anthropic 이 배치 API 에만 브라우저 직접 호출(CORS)을 막아서, 배치 모델을 쓰려면 내 중계 주소가 필요해요. 일반 모델에는 영향 없음. 만드는 법은 README 참고.')}
       ${fr('sModel', '기본 모델', `<select id="sModel">${modelOpts(s.model)}</select>`, '대화마다, 스킬마다 따로 지정할 수도 있어요.')}
       <div class="inl" style="margin:6px 0"><button class="sm" data-act="keyTest">키 · 모델 목록 확인</button><span id="keyRes" class="xs muted"></span></div>
       <div class="sect">OpenAI 호환 · OpenRouter <span class="xs muted">(쓰지 않아도 됨)</span></div>
@@ -69,7 +70,7 @@ const Settings = {
   save(m) {
     const v = (id) => (m.body.querySelector('#' + id) || {}).value; const c = (id) => !!(m.body.querySelector('#' + id) || {}).checked; const n = (id, d) => { const x = num(v(id)); return Number.isFinite(x) ? x : d; };
     const s = S.settings, k = S.secrets, g = s.gh;
-    s.provider = v('sProv'); k.apiKey = v('sKey').trim(); s.anthropicBase = v('sBase').trim() || DEFAULT_SETTINGS.anthropicBase; s.model = v('sModel');
+    s.provider = v('sProv'); k.apiKey = v('sKey').trim(); s.anthropicBase = v('sBase').trim() || DEFAULT_SETTINGS.anthropicBase; s.batchBase = v('sBBase').trim(); s.model = v('sModel');
     k.openaiKey = v('sOKey').trim(); s.openai.base = v('sOBase').trim(); s.openai.model = v('sOModel').trim(); s.openai.in = n('sOIn', 0); s.openai.out = n('sOOut', 0); { const cr = v('sOCr').trim(); s.openai.cr = cr === '' || !Number.isFinite(num(cr)) ? null : num(cr); }
     s.maxTokens = Math.max(256, Math.round(n('sMax', 8000))); s.temperature = n('sTemp', 1); s.effort = v('sEffort') || ''; s.cacheTTL = v('sTTL'); s.maxIters = Math.max(1, Math.round(n('sIters', 10))); s.keepToolTurns = Math.max(1, Math.round(n('sKeep', 2))); s.trimAboveTokens = Math.max(0, Math.round(n('sTrim', 40000))); s.readMaxChars = Math.max(1000, Math.round(n('sRead', 12000)));
     s.includeIndex = c('sIdx'); s.enterSends = c('sEnter'); s.autoApprove = c('sAuto'); s.pinned = lines(v('sPin'));

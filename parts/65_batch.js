@@ -22,22 +22,29 @@ const Batch = {
   _t: null, busy: new Set(),
   async load() { S.batches = (await DB.get('meta', 'batches')) || []; },
   save() { return DB.put('meta', 'batches', S.batches); },
-  url() { return S.settings.anthropicBase.replace(/\/+$/, '') + '/v1/messages/batches'; },
+  base() { return (S.settings.batchBase || S.settings.anthropicBase || '').trim().replace(/\/+$/, ''); },
+  url() { return this.base() + '/v1/messages/batches'; },
+  // Anthropic 은 배치 API 만 CORS 를 거부한다(Disallowed CORS origin) → 공식 주소 그대로는 브라우저에서 호출할 수 없음
+  needsProxy() { return /^https?:\/\/api\.anthropic\.com$/i.test(this.base()); },
+  corsMsg() { return '브라우저에서 Anthropic 배치 API 를 직접 부를 수 없습니다 (서버가 CORS 를 거부함). 설정 → API → "배치 프록시 주소"에 내가 만든 중계 주소를 넣으면 쓸 수 있어요. 중계 코드: tools/batch-proxy-worker.js (README 참고). 일반 모델은 그대로 쓰면 됩니다.'; },
   find(cid) { return S.batches.find((j) => j.cid === cid) || null; },
   pending() { return S.batches.filter((j) => j.status === 'submitted'); },
   async _post(path, body) {
-    return postWithRetry(this.url() + path, { method: 'POST', headers: anthropicHeaders(), body: body ? JSON.stringify(body) : undefined }, { retries: 2 });
+    try { return await postWithRetry(this.url() + path, { method: 'POST', headers: anthropicHeaders(), body: body ? JSON.stringify(body) : undefined }, { retries: this.needsProxy() ? 0 : 2 }); }
+    catch (e) { if (e && e.kind === 'network' && this.needsProxy()) throw new ApiError(this.corsMsg(), { kind: 'cors' }); throw e; }
   },
   async _get(path, ms = 30000) {
-    let res; try { res = await fetchT(this.url() + path, { headers: anthropicHeaders() }, ms); } catch (e) { throw new ApiError(`네트워크 오류: ${e && e.message || e}`, { kind: 'network' }); }
+    let res; try { res = await fetchT(this.url() + path, { headers: anthropicHeaders() }, ms); } catch (e) { throw new ApiError(this.needsProxy() ? this.corsMsg() : `네트워크 오류: ${e && e.message || e}`, { kind: this.needsProxy() ? 'cors' : 'network' }); }
     if (!res.ok) { let type = '', msg = ''; try { const j = await res.json(); type = j.error && j.error.type; msg = j.error && j.error.message; } catch (e) {} throw new ApiError(friendlyApiError(res.status, type, msg), { status: res.status, kind: 'http' }); }
     return res;
   },
   // 대화 한 턴을 배치로 접수
-  async send(chat, text, key) {
+  async send(chat, text, key, { reuse = false } = {}) {
     const turnId = uid('t'), label = text.replace(/\s+/g, ' ').slice(0, 60);
-    chat.messages.push({ role: 'user', content: [{ type: 'text', text }], ts: Date.now() });
-    if (chat.title === '새 대화') chat.title = label.slice(0, 30) || chat.title;
+    if (!reuse) {
+      chat.messages.push({ role: 'user', content: [{ type: 'text', text }], ts: Date.now() });
+      if (chat.title === '새 대화') chat.title = label.slice(0, 30) || chat.title;
+    }
     Chats.save(chat); UI.chat(chat.id);
     try {
       if (!S.secrets.apiKey) throw new ApiError('Anthropic API 키가 없습니다 (설정 → API).', { kind: 'nokey' });

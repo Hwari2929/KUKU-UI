@@ -4,7 +4,7 @@
   "description": "ERTES Studio — 단독 실행 HTML 도구의 분할 소스",
   "scripts": {
     "build": "node build.js",
-    "test": "node build.js && node test/t_text.js && node test/t_gh.js && node test/t_llm.js && node test/t_tools.js && node test/t_agent.js && node test/t_batch.js && node test/t_self.js && node test/t_ui.js"
+    "test": "node build.js && node test/t_text.js && node test/t_gh.js && node test/t_llm.js && node test/t_tools.js && node test/t_agent.js && node test/t_batch.js && node test/t_self.js && node test/t_chat.js && node test/t_ui.js"
   },
   "devDependencies": { "jsdom": "^24.0.0", "fake-indexeddb": "^6.0.0" }
 }

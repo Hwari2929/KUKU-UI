@@ -13,8 +13,8 @@ global.fetch = async (url, opts = {}) => {
   throw new Error('unexpected ' + method + ' ' + url);
 };
 const load = require('./load');
-const X = load(['00_util.js', '10_store.js', '20_text.js', '30_gh.js', '40_llm.js', '45_skills.gen.js', '50_tools.js', '60_agent.js', '65_batch.js'], { fetch: (...a) => global.fetch(...a), setInterval, clearInterval }, 'Chats, submit, Ledger, Budget, estimatePrompt, Batch, batchMessages, isBatchModel, apiModel, DEFAULT_MODELS, loadSettings, DB, priceFor, costOf');
-const { S, FS, Chats, submit, Ledger, Budget, estimatePrompt, Batch, batchMessages, isBatchModel, apiModel, DEFAULT_MODELS, loadSettings, DB } = X;
+const X = load(['00_util.js', '10_store.js', '20_text.js', '30_gh.js', '40_llm.js', '45_skills.gen.js', '50_tools.js', '60_agent.js', '65_batch.js'], { fetch: (...a) => global.fetch(...a), setInterval, clearInterval }, 'Chats, submit, regenerate, Ledger, Budget, estimatePrompt, Batch, batchMessages, isBatchModel, apiModel, DEFAULT_MODELS, loadSettings, DB, priceFor, costOf');
+const { S, FS, Chats, submit, regenerate, Ledger, Budget, estimatePrompt, Batch, batchMessages, isBatchModel, apiModel, DEFAULT_MODELS, loadSettings, DB } = X;
 (async () => {
   // ── 모델 목록
   eq(Object.keys(DEFAULT_MODELS), ['claude-opus-5-5', 'claude-opus-5-5:batch', 'claude-sonnet-5-5', 'claude-sonnet-5-5:batch', 'claude-haiku-5-5']);
@@ -70,6 +70,19 @@ const { S, FS, Chats, submit, Ledger, Budget, estimatePrompt, Batch, batchMessag
   // ── 예산이 바닥이면 접수하지 않음
   Budget.calibrateUSD(0.3); const np2 = calls.filter((c) => c.method === 'POST' && c.p === '/v1/messages/batches').length; const rb = await submit(chat, '예산 없음'); eq(rb.stop, 'budget'); eq(calls.filter((c) => c.method === 'POST' && c.p === '/v1/messages/batches').length, np2);
   // ── 키 없음
+  // ── 다시 생성(배치): 질문은 그대로 두고 새 접수만, 원래 응답은 보관
+  { Budget.calibrateUSD(100); const c5 = Chats.create(); c5.model = 'claude-sonnet-5-5:batch'; state.status = 'ended'; state.rows = [];
+    const r1 = await submit(c5, '분석해줘'); const j1 = Batch.find(r1.cid); state.rows = [{ custom_id: j1.cid, result: { type: 'succeeded', message: { content: [{ type: 'text', text: '첫 결과' }], usage: { input_tokens: 100, output_tokens: 50 }, stop_reason: 'end_turn' } } }]; await Batch.check(j1);
+    eq(c5.messages.map((m) => m.role + (m.local ? 'L' : '')), ['user', 'assistant']); state.status = 'in_progress'; const callsBefore = calls.length;
+    const r2 = await regenerate(c5); eq(r2.stop, 'batch'); eq(c5.messages.filter((m) => m.role === 'user' && !m.local).length, 1, '질문이 두 번 생기지 않음'); eq(c5.messages[0].vers.length, 2); eq(c5.messages[0].vers[0][0].content[0].text, '첫 결과');
+    const sent = calls.slice(callsBefore).find((x) => x.method === 'POST' && x.p === '/v1/messages/batches'); eq(sent.body.requests[0].params.messages.map((m) => m.role), ['user']); ok(JSON.stringify(sent.body.requests[0].params.messages).includes('분석해줘'));
+    ok(c5.messages[c5.messages.length - 1].kind === 'batch', '처리 중 카드'); const tk = await regenerate(c5); eq(tk, null, '배치 처리 중에는 잠금'); eq(c5.messages[0].vers.length, 2);
+    await Batch.drop(r2.cid); state.status = 'ended'; }
+  // ── 배치 CORS: 공식 주소는 브라우저에서 막혀 있어 안내 문구로 바꿔 알려 주고, 프록시 주소가 있으면 그쪽으로 보낸다
+  { const keep = global.fetch; let attempts = 0; global.fetch = async () => { attempts++; throw new TypeError('Failed to fetch'); };
+    ok(Batch.needsProxy()); const c6 = Chats.create(); c6.model = 'claude-sonnet-5-5:batch'; const r6 = await submit(c6, 'cors'); eq(r6.stop, 'error'); ok(c6.messages[c6.messages.length - 1].md.includes('프록시 주소') && c6.messages[c6.messages.length - 1].md.includes('CORS'), '안내 문구'); eq(attempts, 1, '재시도하지 않음');
+    S.settings.batchBase = 'https://px.example.workers.dev/'; ok(!Batch.needsProxy()); eq(Batch.url(), 'https://px.example.workers.dev/v1/messages/batches'); global.fetch = keep;
+    const n0 = calls.length; const c7 = Chats.create(); c7.model = 'claude-sonnet-5-5:batch'; const r7 = await submit(c7, 'via proxy'); eq(r7.stop, 'batch'); ok(calls.length > n0); S.settings.batchBase = ''; ok(Batch.needsProxy()); await Batch.drop(r7.cid); }
   Budget.calibrateUSD(100); S.secrets.apiKey = ''; const rk = await submit(chat, '키 없음'); eq(rk.stop, 'error'); ok(chat.messages[chat.messages.length - 1].md.includes('키가 없'));
   Batch.arm(); ok(Batch._t); Batch.stop(); ok(!Batch._t);
   console.log(`batch OK (${n} assertions)`);

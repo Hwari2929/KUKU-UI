@@ -22,15 +22,16 @@
 | `parts/90_boot.js` | 시작 |
 | `ui/shell.html`, `ui/style.css` | HTML 골격과 스타일 |
 | `skills/*.md` | 내장 스킬(장면·확장·정합·구상·캠페인·대사·요약). 리포의 `studio/skills/*.md` 로 덮어쓸 수 있음 |
-| `test/` | 로직 테스트(`t_text`, `t_gh`, `t_llm`, `t_tools`, `t_agent`, `t_batch`, `t_self`)와 jsdom 화면 테스트(`t_ui`) |
+| `test/` | 로직 테스트(`t_text`, `t_gh`, `t_llm`, `t_tools`, `t_agent`, `t_batch`, `t_self`, `t_chat`)와 jsdom 화면 테스트(`t_ui`) |
 | `build.js`, `gen_skills.js` | 빌드 스크립트 |
+| `tools/batch-proxy-worker.js` | (선택) 배치 API 중계용 Cloudflare Worker — 합본에는 들어가지 않음 |
 
 ## 빌드 · 테스트
 
 ```
 node build.js            # ERTES-Studio.html 생성
 node test/t_text.js      # 순수 로직 테스트들 (의존성 없음)
-node test/t_gh.js && node test/t_llm.js && node test/t_tools.js && node test/t_agent.js && node test/t_batch.js && node test/t_self.js
+node test/t_gh.js && node test/t_llm.js && node test/t_tools.js && node test/t_agent.js && node test/t_batch.js && node test/t_self.js && node test/t_chat.js
 # 화면 테스트는 jsdom, fake-indexeddb 가 필요:  npm i jsdom fake-indexeddb  (test/t_ui.js 의 require 경로 참고)
 ```
 
@@ -40,6 +41,8 @@ node test/t_gh.js && node test/t_llm.js && node test/t_tools.js && node test/t_a
 - 예산은 **달러(USD) 기준**(기본 총 크레딧 100달러)이고 원화는 보조 표시입니다(설정에서 끄기 가능). 환율은 첫 실행 때 한 번 받아 시각·출처와 함께 기록하고, 예산 패널 → 설정의 "지금 갱신"으로 다시 받습니다. 받기에 실패하면 마지막 값을 계속 쓰며 직접 입력도 됩니다.
 - OpenRouter: 설정 → API → "프리셋: OpenRouter · Gemini 4 Argon" 버튼으로 주소·모델(`google/gemini-4-argon`)·단가가 채워집니다. OpenRouter 사용분은 응답의 실제 청구액으로 기록하고, Anthropic 남은 크레딧에서는 빼지 않습니다.
 - 모델: Opus 5.5, Sonnet 5.5, 각각의 **배치** 버전, Haiku 5.5. 대화창 아래 모델 선택에서 "… 배치" 를 고르고 보내면 Message Batches API 로 접수됩니다(토큰 단가 50%, 보통 몇 분~몇 시간·최대 24시간). 도구·파일 색인 없이 한 번에 답하는 분석용이고, 접수 정보는 기기에 저장돼 앱을 닫았다 열어도 이어서 확인합니다. 끝나면 대화에 답이 붙고 장부에 반값으로 기록됩니다. 실패·만료는 "다시 보내기".
+- **배치 모델은 프록시가 필요합니다.** Anthropic 서버가 Message Batches API(`/v1/messages/batches`)에만 브라우저 직접 호출(CORS)을 거부해서("Disallowed CORS origin"), 공식 주소로는 "네트워크 오류"가 납니다(일반 `/v1/messages` 는 정상). 설정 → API → **배치 프록시 주소**에 내 중계 주소를 넣으면 배치 요청만 그쪽으로 갑니다. 중계는 `tools/batch-proxy-worker.js` 를 Cloudflare Workers 에 붙여넣어 배포하면 됩니다(API 키는 저장하지 않고 헤더로 전달만 하며, `/v1/messages/batches` 경로만 통과). 프록시를 쓰지 않으면 배치 모델은 선택해도 접수되지 않고 이유를 안내합니다.
+- **질문·답변 고치기**: 보낸 질문과 받은 답에 ✎ 수정 / 🗑 삭제 버튼이 있고, 각 질문 끝에는 🗑 응답 삭제가 있습니다(도구 호출·결과 쌍은 함께 지워져 요청이 깨지지 않습니다). **↻ 다시 생성**은 마지막 질문을 같은 맥락·같은 입력으로 다시 보내 다른 답을 받고, 원래 답은 보관되어 ◀ 1/2 ▶ 로 넘겨 볼 수 있습니다(모델·노력을 바꾼 뒤 눌러도 됩니다). 마지막 질문에서만 다시 생성·넘겨 보기가 되고, 비용은 호출마다 장부에 따로 기록됩니다. 수정한 내용은 이후 대화의 맥락으로 쓰이며 이미 받은 다른 답이 다시 만들어지지는 않습니다. 배치 처리 중에는 그 대화를 고칠 수 없습니다.
 - 노력 수준(추론 강도): 대화창의 "노력" 선택(자동/중간/높음/매우 높음) 또는 설정의 기본값. 자동은 아무것도 보내지 않아 모델 기본값(Claude 는 높음)을 따릅니다. Opus/Sonnet 은 `output_config.effort`, OpenRouter 는 `reasoning.effort` 로 전달하며 Haiku 에는 보내지 않습니다.
 - OpenRouter 프리셋은 일반(`google/gemini-4-argon`)과 배치(`google/gemini-4-argon:batch`, 반값) 두 개입니다.
 - **자가개선**: 상단의 "📚 설정집 / 🛠 자가개선" 스위치로 작업공간을 바꿉니다. 자가개선 모드에서는 이 리포(기본 `Hwari2929/KUKU-UI`)를 `studio-src/` 아래로 받아 AI 와 함께 소스를 고칩니다. 설정집 문서와는 완전히 분리되어 서로 보이지 않습니다.

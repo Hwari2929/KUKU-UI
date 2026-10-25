@@ -15,6 +15,59 @@ const Chats = {
     let i = c.messages.length - 1; while (i >= 0 && !(c.messages[i].role === 'user' && !c.messages[i].toolResults && !c.messages[i].local)) i--;
     if (i < 0) return null; const removed = c.messages.splice(i); this.save(c); return removed;
   },
+  /* ── 질문·답변 고치기 / 지우기 / 다시 생성 ──
+     한 "턴" = 질문(user, 도구 결과 아님) + 그 뒤 응답들(assistant·도구 결과·안내) — 다음 질문 직전까지.
+     다시 생성하면 원래 응답 묶음은 질문 메시지의 vers 에 보관되고(vi = 지금 보이는 것의 번호, 보이는 쪽은 null), 새 응답이 messages 에 붙는다. */
+  isBoundary(m) { return !!m && m.role === 'user' && !m.toolResults; },
+  textOf(m) { return (m.content || []).filter((b) => b.type === 'text').map((b) => b.text).join(m.role === 'user' ? '\n' : '\n\n'); },
+  turnAt(c, i) {
+    let s = Math.min(i, c.messages.length - 1); while (s >= 0 && !this.isBoundary(c.messages[s])) s--;
+    if (s < 0) return null; let e = s + 1; while (e < c.messages.length && !this.isBoundary(c.messages[e])) e++;
+    return { inp: s, from: s + 1, to: e, real: isUserInput(c.messages[s]) };
+  },
+  lastTurn(c) {   // 맨 끝 턴이 진짜 질문으로 시작할 때만
+    let s = c.messages.length - 1; while (s >= 0 && !this.isBoundary(c.messages[s])) s--;
+    return s >= 0 && isUserInput(c.messages[s]) ? this.turnAt(c, s) : null;
+  },
+  // 질문(user)·답변(assistant)의 글만 바꾼다. 도구 호출 블록 등은 그대로 둔다.
+  editText(c, i, text) {
+    const m = c.messages[i]; text = String(text == null ? '' : text).replace(/\r\n/g, '\n');
+    if (!m || m.local || m.toolResults || !text.trim()) return false;
+    const out = []; let placed = false;
+    for (const b of m.content || []) { if (b.type === 'text') { if (!placed) { out.push({ type: 'text', text }); placed = true; } } else out.push(b); }
+    if (!placed) return false;
+    m.content = out; m.edited = true; this.save(c); return true;
+  },
+  deleteTurn(c, i) {   // 질문 + 모든 응답
+    const t = this.turnAt(c, i); if (!t) return false; c.messages.splice(t.inp, t.to - t.inp); this.save(c); return true;
+  },
+  deleteReply(c, i) {   // 응답만 (질문은 남김). 마지막 턴에 다른 버전이 보관돼 있으면 그중 하나가 대신 나타난다.
+    const t = this.turnAt(c, i); if (!t) return false; const inp = c.messages[t.inp]; const last = this.lastTurn(c); const isLast = !!last && last.inp === t.inp;
+    c.messages.splice(t.from, t.to - t.from);
+    if (inp.vers) {
+      if (isLast) { inp.vers.splice(inp.vi, 1); if (inp.vers.length) { const k = Math.min(inp.vi, inp.vers.length - 1); const g = inp.vers[k] || []; inp.vers[k] = null; inp.vi = k; c.messages.push(...g); } this.tidyVers(inp); }
+      else { delete inp.vers; delete inp.vi; }   // 중간 턴은 다른 버전으로 바꿔 끼울 수 없으니 보관본도 버린다
+    }
+    this.save(c); return true;
+  },
+  tidyVers(inp) { if (inp.vers && inp.vers.length < 2) { delete inp.vers; delete inp.vi; } },
+  // 마지막 턴의 응답을 치우고 보관한다 → 이어서 runTurn/Batch.send 를 reuse 로 부르면 새 응답이 붙는다. 반환: 질문 글.
+  startReroll(c) {
+    const t = this.lastTurn(c); if (!t) return null; const inp = c.messages[t.inp]; const text = this.textOf(inp);
+    const group = c.messages.splice(t.from, t.to - t.from);
+    if (group.length) {
+      if (!inp.vers) inp.vers = [group]; else inp.vers[inp.vi] = group;
+      inp.vers.push(null); inp.vi = inp.vers.length - 1;
+    }
+    this.save(c); return text;
+  },
+  // 보관된 다른 응답으로 바꿔 보기 (마지막 턴에서만)
+  switchVer(c, k) {
+    const t = this.lastTurn(c); if (!t) return false; const inp = c.messages[t.inp];
+    if (!inp.vers || k < 0 || k >= inp.vers.length || k === inp.vi || !inp.vers[k]) return false;
+    inp.vers[inp.vi] = c.messages.splice(t.from); const nxt = inp.vers[k]; inp.vers[k] = null; inp.vi = k; c.messages.push(...nxt);
+    this.save(c); return true;
+  },
 };
 const isUserInput = (m) => m.role === 'user' && !m.local && !m.toolResults;
 function addLocal(chat, md, kind = 'notice') { chat.messages.push({ role: 'assistant', local: true, kind, md, ts: Date.now(), content: [] }); Chats.save(chat); UI.chat(chat.id); }
@@ -54,13 +107,15 @@ function estimatePrompt(chat, text) {
 }
 
 /* ── 한 턴 실행: 사용자 입력 → (모델 호출 ↔ 도구 실행)* → 최종 답 ── */
-async function runTurn(chat, text, { signal } = {}) {
+async function runTurn(chat, text, { signal, reuse = false } = {}) {
   if (S.run.busy) throw new Error('이미 실행 중');
   const ac = new AbortController(); S.run = { busy: true, abort: ac, chatId: chat.id };
   const turnId = uid('t'); const label = text.replace(/\s+/g, ' ').slice(0, 60);
   const st = { turnId, cost: 0, iters: 0, usage: zeroUsage(), stop: '' };
-  chat.messages.push({ role: 'user', content: [{ type: 'text', text }], ts: Date.now() });
-  if (chat.title === '새 대화') chat.title = label.slice(0, 30) || chat.title;
+  if (!reuse) {   // 다시 생성이면 질문은 이미 대화에 있다
+    chat.messages.push({ role: 'user', content: [{ type: 'text', text }], ts: Date.now() });
+    if (chat.title === '새 대화') chat.title = label.slice(0, 30) || chat.title;
+  }
   Chats.save(chat); UI.turn(true); UI.chat(chat.id);
   const live = { chatId: chat.id, turnId, model: '', text: '', tools: [], iter: 0, status: 'wait', note: '', usage: null };
   const push = () => UI.stream(live);
@@ -163,4 +218,21 @@ async function submit(chat, raw, { suffix = '' } = {}) {
     if (isBatchModel(model)) return Batch.send(chat, body + suffix, model);
   }
   return runTurn(chat, body + suffix);
+}
+
+/* ── 마지막 질문을 같은 맥락·같은 입력으로 다시 받기 (지금 응답은 보관) ── */
+function chatLocked(chat) {
+  if (S.run.busy) return '이전 응답이 끝난 뒤에 눌러 주세요.';
+  if (typeof Batch !== 'undefined' && Batch.pending().some((j) => j.chatId === chat.id)) return '배치 처리 중에는 이 대화를 고칠 수 없어요. 끝나거나 취소한 뒤에 하세요.';
+  return '';
+}
+async function regenerate(chat) {
+  const lock = chatLocked(chat); if (lock) { UI.toast(lock); return null; }
+  if (!Chats.lastTurn(chat)) { UI.toast('다시 생성할 마지막 질문이 없어요.'); return null; }
+  const text = Chats.startReroll(chat); UI.chat(chat.id);
+  if (LLM.provider !== 'openai') {
+    const sk = chat.skill ? Skills.find(chat.skill) : null; const model = (sk && sk.model) || chat.model || S.settings.model;
+    if (isBatchModel(model)) return Batch.send(chat, text, model, { reuse: true });
+  }
+  return runTurn(chat, text, { reuse: true });
 }

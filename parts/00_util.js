@@ -73,6 +73,7 @@ const isOpenRouter = (base) => /(^|\/\/)([\w-]+\.)*openrouter\.ai(\/|$)/i.test(b
 const DEFAULT_SETTINGS = {
   provider: 'anthropic',
   anthropicBase: 'https://api.anthropic.com',
+  batchBase: '',           // 배치 전용 주소(선택). Anthropic 은 배치 API 에만 브라우저 직접 호출(CORS)을 막아서, 쓰려면 내 프록시 주소가 필요함
   openai: { base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', in: 0, out: 0, cr: null },   // 형식상 구현 — 단가(USD/1M)를 직접 넣으면 장부에 반영
   model: 'claude-sonnet-5-5',
   effort: '',              // 기본 노력 수준 ('' 자동 | medium | high | xhigh) — 대화마다 따로 고를 수 있음
