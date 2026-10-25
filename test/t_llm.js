@@ -23,8 +23,8 @@ const calls = [];
 let script = [];
 global.fetch = async (url, opts = {}) => { calls.push({ url, opts, body: opts.body ? JSON.parse(opts.body) : null }); const s = script.shift(); if (typeof s === 'function') return s(opts); return s; };
 const load = require('./load');
-const X = load(['00_util.js', '10_store.js', '20_text.js', '30_gh.js', '40_llm.js'], { fetch: (...a) => global.fetch(...a) }, 'LLM, Ledger, Budget, FX, OPENAI_PRESETS, isOpenRouter, loadSettings, altUSD, costOf, priceFor, buildBody, anthropicStream, openaiStream, toOpenAIMessages, normUsage, estimateCost, ApiError, zeroUsage');
-const { S, LLM, Ledger, Budget, FX, OPENAI_PRESETS, isOpenRouter, loadSettings, altUSD, costOf, buildBody, anthropicStream, openaiStream } = X;
+const X = load(['00_util.js', '10_store.js', '20_text.js', '30_gh.js', '40_llm.js'], { fetch: (...a) => global.fetch(...a) }, 'LLM, Ledger, Budget, FX, EFFORTS, effortOf, OPENAI_PRESETS, isOpenRouter, loadSettings, altUSD, costOf, priceFor, buildBody, anthropicStream, openaiStream, toOpenAIMessages, normUsage, estimateCost, ApiError, zeroUsage');
+const { S, LLM, Ledger, Budget, FX, EFFORTS, effortOf, OPENAI_PRESETS, isOpenRouter, loadSettings, altUSD, costOf, buildBody, anthropicStream, openaiStream } = X;
 (async () => {
   S.secrets.apiKey = 'sk-test'; S.settings.budget.anchorUSD = 100; S.settings.budget.anchorTs = 0;
   // 비용: sonnet 5.5  in 1000*2 + cw5 2000*2.5 + cr 10000*0.1 + out 500*10 = 2000+5000+1000+5000 = 13000 /1e6
@@ -89,6 +89,15 @@ const { S, LLM, Ledger, Budget, FX, OPENAI_PRESETS, isOpenRouter, loadSettings, 
     near(costOf('m', { ...r.usage, extCost: undefined }, 'openai').total, (500 * 2 + 500 * 0.1 + 100 * 10) * 1e-6, '프리셋 단가 계산'); near(costOf('m', r.usage, 'openai').total, 0.0042, '실제 청구액 우선');
     const before = Budget.remaining(); const e = await Ledger.add({ chatId: 'c', turnId: 't', model: 'google/gemini-4-argon', provider: 'openai', usage: r.usage }); near(e.cost, 0.0042); near(Budget.remaining(), before, 'OpenRouter 는 Anthropic 잔액을 깎지 않음'); near(Budget.externalSince().cost, 0.0042);
     near(X.estimateCost('m', 1000, 0, 100), (1000 * 2 + 100 * 10) * 1e-6, 'openai 어림 비용'); S.settings.provider = 'anthropic'; }
+  // 노력 수준: Opus/Sonnet 만 output_config.effort, Haiku·자동은 보내지 않음
+  { const bb = (model, effort) => buildBody({ model, sys: [], tools: [], messages: [{ role: 'user', content: 'q' }], maxTokens: 100, effort });
+    eq(bb('claude-sonnet-5-5', 'xhigh').output_config, { effort: 'xhigh' }); eq(bb('claude-opus-5-5', 'medium').output_config, { effort: 'medium' }); eq(bb('claude-sonnet-5-5-20261001', 'high').output_config, { effort: 'high' }, '날짜 붙은 모델 이름');
+    ok(!('output_config' in bb('claude-haiku-5-5', 'high')) && !('output_config' in bb('claude-sonnet-5-5', '')) && !('output_config' in bb('claude-sonnet-5-5', undefined)));
+    eq(EFFORTS.map((e) => e[0]), ['', 'medium', 'high', 'xhigh']); S.settings.effort = 'high'; eq(effortOf({ effort: '' }), 'high'); eq(effortOf({ effort: 'medium' }), 'medium'); S.settings.effort = '';
+    S.settings.provider = 'openai'; S.settings.openai.base = 'https://openrouter.ai/api/v1';
+    script = [osse([{ choices: [{ delta: { content: 'a' }, finish_reason: 'stop' }] }])]; calls.length = 0; await LLM.stream({ sys: [], tools: [], messages: [{ role: 'user', content: 'q' }], maxTokens: 10, effort: 'xhigh' }); eq(calls[0].body.reasoning, { effort: 'high' });
+    script = [osse([{ choices: [{ delta: { content: 'a' }, finish_reason: 'stop' }] }])]; calls.length = 0; await LLM.stream({ sys: [], tools: [], messages: [{ role: 'user', content: 'q' }], maxTokens: 10 }); ok(!('reasoning' in calls[0].body));
+    S.settings.provider = 'anthropic'; }
   // count_tokens
   S.settings.provider = 'anthropic'; script = [{ ok: true, status: 200, headers: new Map(), json: async () => ({ input_tokens: 1234 }) }]; calls.length = 0;
   const ct = await LLM.count({ model: 'claude-sonnet-5-5', sys: [{ text: 'x', cache: true }], tools: [], messages: [{ role: 'user', content: 'q' }] }); eq(ct, { tokens: 1234, approx: false }); ok(calls[0].url.endsWith('/v1/messages/count_tokens') && !('max_tokens' in calls[0].body) && !('stream' in calls[0].body), 'count body');

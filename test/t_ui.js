@@ -128,6 +128,7 @@ const mockFetch = async (url, opts = {}) => {
   { const opts = $$('#modelSel option').map((o) => o.textContent); ok(opts.some((t) => t.includes('Sonnet 5.5 배치')) && opts.some((t) => t.includes('Opus 5.5 배치')) && !opts.some((t) => /Fable/.test(t)), '모델 목록: ' + opts.join('|')); }
   { const sel = $('#modelSel'); sel.value = 'claude-sonnet-5-5:batch'; sel.dispatchEvent(new W.Event('change')); await sleep(300); ok($('#estText').textContent.includes('배치(반값)'), '배치 표시'); }
   const ledgerBefore = ev('S.ledger.length'); const remBefore = ev('Budget.remaining()');
+  { const es = $('#effortSel'); ok(es && [...es.options].map((o) => o.value).join() === ',medium,high,xhigh', '노력 선택'); es.value = 'high'; es.dispatchEvent(new W.Event('change')); await sleep(20); eq(ev('Chat.cur.effort'), 'high'); }
   $('#chatInput').value = '린디웨의 말투를 정리해줘'; $('#sendBtn').click(); await sleep(200);
   ok($('#msgs').textContent.includes('배치 처리 중') && $('#msgs [data-act=batchCheck]'), '처리 중 카드'); eq(bat.params.model, 'claude-sonnet-5-5'); ok(!('tools' in bat.params)); eq(ev('S.batches.length'), 1);
   $('#msgs [data-act=batchCheck]').click(); await sleep(150); ok($('#msgs').textContent.includes('배치 처리 중'), '아직 처리 중');

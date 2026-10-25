@@ -40,8 +40,8 @@ const isMd = (p) => /\.(md|markdown|txt)$/i.test(p);
 
 /* ── 모델 가격 (USD / 1M tokens). 출처: platform.claude.com 가격표 (2026-10-25 확인). 설정에서 고칠 수 있다. */
 const BASE_MODELS = {
-  'claude-opus-5-5': { label: 'Opus 5.5', in: 4, out: 20, cw5: 5, cw1h: 8, cr: 0.20, ctx: 1000000 },
-  'claude-sonnet-5-5': { label: 'Sonnet 5.5', in: 2, out: 10, cw5: 2.5, cw1h: 4, cr: 0.10, ctx: 1000000 },
+  'claude-opus-5-5': { label: 'Opus 5.5', in: 4, out: 20, cw5: 5, cw1h: 8, cr: 0.20, ctx: 1000000, effort: true },
+  'claude-sonnet-5-5': { label: 'Sonnet 5.5', in: 2, out: 10, cw5: 2.5, cw1h: 4, cr: 0.10, ctx: 1000000, effort: true },
   'claude-haiku-5-5': { label: 'Haiku 5.5', in: 0.10, out: 0.50, cw5: 0.125, cw1h: 0.20, cr: 0.01, ctx: 200000, tier: { over: 100000, in: 0.50, out: 2.50, cw5: 0.625, cw1h: 1, cr: 0.05 } },
 };
 // 배치(Message Batches API)는 모든 토큰 단가가 50%. 키는 `<모델>:batch`, 실제 API 모델 이름은 apiId.
@@ -52,6 +52,10 @@ const DEFAULT_MODELS = (() => {
   o['claude-haiku-5-5'] = { ...BASE_MODELS['claude-haiku-5-5'] };
   return o;
 })();
+// 노력 수준(추론 강도): '' = 자동(보내지 않음 → 모델 기본값). Claude 는 output_config.effort, OpenRouter 는 reasoning.effort 로 보낸다.
+const EFFORTS = [['', '자동'], ['medium', '중간'], ['high', '높음'], ['xhigh', '매우 높음']];
+const effortLabel = (v) => (EFFORTS.find((e) => e[0] === v) || EFFORTS[0])[1];
+const effortOf = (chat) => (chat && chat.effort) || S.settings.effort || '';
 const modelInfo = (key) => (S.settings.models || {})[key] || {};
 const isBatchModel = (key) => !!modelInfo(key).batch;
 const apiModel = (key) => modelInfo(key).apiId || key;
@@ -66,6 +70,7 @@ const DEFAULT_SETTINGS = {
   anthropicBase: 'https://api.anthropic.com',
   openai: { base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', in: 0, out: 0, cr: null },   // 형식상 구현 — 단가(USD/1M)를 직접 넣으면 장부에 반영
   model: 'claude-sonnet-5-5',
+  effort: '',              // 기본 노력 수준 ('' 자동 | medium | high | xhigh) — 대화마다 따로 고를 수 있음
   maxTokens: 8000,
   temperature: 1,
   cacheTTL: '5m',          // 고정 앞부분(도구·규칙·색인)의 TTL: '5m' | '1h'

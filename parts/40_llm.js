@@ -14,7 +14,7 @@ function friendlyApiError(status, type, msg) {
   if (status === 413) return `요청이 너무 큼 (413): 대화/색인이 한도를 넘음 — 새 대화를 시작하거나 색인을 끄세요.`;
   if (status === 429) return `호출 한도 초과 (429): ${m}`;
   if (status === 529 || type === 'overloaded_error') return `서버가 혼잡함 (529): 잠시 뒤 다시 시도하세요.`;
-  if (status === 400) return `요청 오류 (400): ${m}`;
+  if (status === 400) return `요청 오류 (400): ${m}${/effort|output_config/i.test(m) ? ' — 노력 수준 설정 때문일 수 있어요. 대화창의 "노력"을 자동으로 바꿔 보세요.' : ''}`;
   return `API 오류 ${status || ''} ${type || ''}: ${m}`;
 }
 
@@ -75,8 +75,10 @@ function cleanMessages(messages) {
 }
 function cacheCtl(ttl) { return ttl === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' }; }
 // sys: [{text, cache?}]  tools: [{name, description, input_schema}]  messages: Anthropic 형식
-function buildBody({ model, sys, tools, messages, maxTokens, temperature, ttl = '5m', stream = true, cacheTail = true }) {
+const supportsEffort = (model) => { const M = S.settings.models || {}; const k = M[model] ? model : priceFor(model).key; return !!(k && M[k] && M[k].effort); };
+function buildBody({ model, sys, tools, messages, maxTokens, temperature, ttl = '5m', stream = true, cacheTail = true, effort = '' }) {
   const body = { model, max_tokens: maxTokens, stream };
+  if (effort && supportsEffort(model)) body.output_config = { effort };
   const sysBlocks = (sys || []).filter((b) => b.text && b.text.trim()).map((b) => { const o = { type: 'text', text: b.text }; if (b.cache) o.cache_control = cacheCtl(ttl); return o; });
   if (sysBlocks.length) body.system = sysBlocks;
   // 도구 정의는 캐시 순서상 system 보다 앞이라, system 에 중단점이 있으면 거기에 함께 묶인다 → 따로 표시하지 않음(중단점 절약)
@@ -210,7 +212,7 @@ function toOpenAIMessages(sys, messages) {
 async function openaiStream(req, cb = {}) {
   const o = S.settings.openai; if (!S.secrets.openaiKey) throw new ApiError('OpenAI 호환 API 키가 없습니다 (설정 → API).', { kind: 'nokey' });
   const body = { model: o.model, messages: toOpenAIMessages(req.sys, req.messages), stream: true, stream_options: { include_usage: true }, max_tokens: req.maxTokens };
-  if (isOpenRouter(o.base)) body.usage = { include: true };   // OpenRouter: 마지막 청크에 실제 청구액(usage.cost)을 포함
+  if (isOpenRouter(o.base)) { body.usage = { include: true }; if (req.effort) body.reasoning = { effort: req.effort === 'xhigh' ? 'high' : req.effort }; }   // OpenRouter: 마지막 청크에 실제 청구액(usage.cost)을 포함
   if (req.tools && req.tools.length) body.tools = req.tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } }));
   if (typeof req.temperature === 'number' && req.temperature !== 1) body.temperature = req.temperature;
   const t0 = Date.now();

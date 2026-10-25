@@ -39,6 +39,7 @@ node test/t_gh.js && node test/t_llm.js && node test/t_tools.js && node test/t_a
 - 예산은 **달러(USD) 기준**(기본 총 크레딧 100달러)이고 원화는 보조 표시입니다(설정에서 끄기 가능). 환율은 첫 실행 때 한 번 받아 시각·출처와 함께 기록하고, 예산 패널 → 설정의 "지금 갱신"으로 다시 받습니다. 받기에 실패하면 마지막 값을 계속 쓰며 직접 입력도 됩니다.
 - OpenRouter: 설정 → API → "프리셋: OpenRouter · Gemini 4 Argon" 버튼으로 주소·모델(`google/gemini-4-argon`)·단가가 채워집니다. OpenRouter 사용분은 응답의 실제 청구액으로 기록하고, Anthropic 남은 크레딧에서는 빼지 않습니다.
 - 모델: Opus 5.5, Sonnet 5.5, 각각의 **배치** 버전, Haiku 5.5. 대화창 아래 모델 선택에서 "… 배치" 를 고르고 보내면 Message Batches API 로 접수됩니다(토큰 단가 50%, 보통 몇 분~몇 시간·최대 24시간). 도구·파일 색인 없이 한 번에 답하는 분석용이고, 접수 정보는 기기에 저장돼 앱을 닫았다 열어도 이어서 확인합니다. 끝나면 대화에 답이 붙고 장부에 반값으로 기록됩니다. 실패·만료는 "다시 보내기".
+- 노력 수준(추론 강도): 대화창의 "노력" 선택(자동/중간/높음/매우 높음) 또는 설정의 기본값. 자동은 아무것도 보내지 않아 모델 기본값(Claude 는 높음)을 따릅니다. Opus/Sonnet 은 `output_config.effort`, OpenRouter 는 `reasoning.effort` 로 전달하며 Haiku 에는 보내지 않습니다.
 - OpenRouter 프리셋은 일반(`google/gemini-4-argon`)과 배치(`google/gemini-4-argon:batch`, 반값) 두 개입니다.
 - 모델 단가는 `parts/00_util.js` 의 `DEFAULT_MODELS` (공식 가격표 2026-10-25 확인). 앱의 예산 패널에서 고칠 수 있습니다.
 - AI 의 쓰기는 항상 승인 대기열을 거칩니다. 원본 설정 문서(`lore/인물/*.md` 등)는 쓰기 금지 규칙이 기본 적용됩니다.

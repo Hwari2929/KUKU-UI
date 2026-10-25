@@ -37,7 +37,7 @@ const { S, FS, Chats, submit, Ledger, Budget, estimatePrompt, Batch, batchMessag
   S.secrets.apiKey = 'k'; S.settings.budget.anchorUSD = 100; S.settings.budget.anchorTs = 0; S.settings.maxTokens = 3000;
   FS.set('CLAUDE.md', '# 규칙'); FS.set('lore/인물/린디웨.md', '# 린디웨\n협력팀장');
   const chat = Chats.create(); chat.model = 'claude-sonnet-5-5:batch'; const notes = []; X.UI.toast = (m) => notes.push(m);
-  const r = await submit(chat, '린디웨와 비비안의 관계를 분석해 줘'); eq(r.stop, 'batch');
+  chat.effort = 'medium'; const r = await submit(chat, '린디웨와 비비안의 관계를 분석해 줘'); eq(r.stop, 'batch'); eq(calls.find((c) => c.method === 'POST' && c.p === '/v1/messages/batches').body.requests[0].params.output_config, { effort: 'medium' }); chat.effort = '';
   const post = calls.find((c) => c.method === 'POST' && c.p === '/v1/messages/batches'); ok(post && post.headers['x-api-key'] === 'k');
   const rq = post.body.requests[0]; ok(/^ertes_[a-z0-9]+$/.test(rq.custom_id)); eq(rq.params.model, 'claude-sonnet-5-5'); eq(rq.params.max_tokens, 3000);
   ok(!('stream' in rq.params) && !('tools' in rq.params) && !JSON.stringify(rq).includes('cache_control'), '스트림/도구/캐시 표시 없음');

@@ -48,7 +48,7 @@ const Batch = {
       const ctxMax = modelInfo(key).ctx || 200000;
       if (inEst > ctxMax * 0.92) { addLocal(chat, `대화가 모델 한도(${fmtN(ctxMax)} 토큰)에 가까워 접수하지 않았습니다. 새 대화를 시작하세요.`, 'error'); return { stop: 'ctx' }; }
       const pre = Budget.precheck(estimateCost(key, inEst, 0, Math.min(4000, S.settings.maxTokens))); if (!pre.ok) { addLocal(chat, '⛔ ' + pre.msg, 'error'); return { stop: 'budget' }; }
-      const params = buildBody({ model: apiModel(key), sys, tools: [], messages, maxTokens: S.settings.maxTokens, temperature: S.settings.temperature, stream: false, cacheTail: false }); delete params.stream;
+      const params = buildBody({ model: apiModel(key), sys, tools: [], messages, maxTokens: S.settings.maxTokens, temperature: S.settings.temperature, stream: false, cacheTail: false, effort: effortOf(chat) }); delete params.stream;
       const cid = newBatchCid();
       const res = await this._post('', { requests: [{ custom_id: cid, params }] }); const j = await res.json();
       const job = { id: j.id, cid, chatId: chat.id, turnId, label, key, ts: Date.now(), status: 'submitted', pstatus: j.processing_status || 'in_progress', params, checked: 0, err: '' };

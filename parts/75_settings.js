@@ -24,7 +24,8 @@ const Settings = {
     </section>
     <section class="sset ${this.tab === 'behave' ? 'on' : ''}" data-s="behave">
       ${fr('sMax', '최대 출력 토큰', tx('sMax', s.maxTokens), '한 번의 답변 길이 상한. 장면 스크립트는 4000~8000이면 충분.')}
-      ${fr('sTemp', '온도', tx('sTemp', s.temperature), '1 = 기본값(전송 안 함). 일부 모델은 온도를 받지 않을 수 있어요.')}
+      ${fr('sEffort', '기본 노력 수준', `<select id="sEffort">${EFFORTS.map(([v, l]) => `<option value="${v}" ${(s.effort || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`, '자동 = 보내지 않음(모델 기본값, Claude 는 높음). 대화창에서 대화마다 바꿀 수 있어요. Opus/Sonnet 에만 적용(Haiku 는 무시), OpenRouter 는 reasoning.effort 로 전달(매우 높음은 높음으로).')}
+      ${fr('sTemp', '온도', tx('sTemp', s.temperature), '1 = 기본값(전송 안 함). Sonnet/Opus 5.5 는 온도를 무시할 수 있어요.')}
       ${fr('sTTL', '캐시 유지 시간', `<select id="sTTL"><option value="5m" ${s.cacheTTL === '5m' ? 'selected' : ''}>5분 (쓰기 1.25배)</option><option value="1h" ${s.cacheTTL === '1h' ? 'selected' : ''}>1시간 (쓰기 2배)</option></select>`, '규칙·색인 같은 고정 앞부분에 적용. 자주 쉬면서 쓰면 1시간이 이득.')}
       ${fr('sIters', '도구 연속 호출 한도', tx('sIters', s.maxIters), '한 번의 질문에서 문서를 찾고 읽는 횟수 상한')}
       ${fr('sKeep', '최근 유지 턴 수', tx('sKeep', s.keepToolTurns), '대화가 길어질 때, 이보다 오래된 도구 결과는 생략 표시로 바꿔 토큰을 아낌')}
@@ -67,7 +68,7 @@ const Settings = {
     const s = S.settings, k = S.secrets, g = s.gh;
     s.provider = v('sProv'); k.apiKey = v('sKey').trim(); s.anthropicBase = v('sBase').trim() || DEFAULT_SETTINGS.anthropicBase; s.model = v('sModel');
     k.openaiKey = v('sOKey').trim(); s.openai.base = v('sOBase').trim(); s.openai.model = v('sOModel').trim(); s.openai.in = n('sOIn', 0); s.openai.out = n('sOOut', 0); { const cr = v('sOCr').trim(); s.openai.cr = cr === '' || !Number.isFinite(num(cr)) ? null : num(cr); }
-    s.maxTokens = Math.max(256, Math.round(n('sMax', 8000))); s.temperature = n('sTemp', 1); s.cacheTTL = v('sTTL'); s.maxIters = Math.max(1, Math.round(n('sIters', 10))); s.keepToolTurns = Math.max(1, Math.round(n('sKeep', 2))); s.trimAboveTokens = Math.max(0, Math.round(n('sTrim', 40000))); s.readMaxChars = Math.max(1000, Math.round(n('sRead', 12000)));
+    s.maxTokens = Math.max(256, Math.round(n('sMax', 8000))); s.temperature = n('sTemp', 1); s.effort = v('sEffort') || ''; s.cacheTTL = v('sTTL'); s.maxIters = Math.max(1, Math.round(n('sIters', 10))); s.keepToolTurns = Math.max(1, Math.round(n('sKeep', 2))); s.trimAboveTokens = Math.max(0, Math.round(n('sTrim', 40000))); s.readMaxChars = Math.max(1000, Math.round(n('sRead', 12000)));
     s.includeIndex = c('sIdx'); s.enterSends = c('sEnter'); s.autoApprove = c('sAuto'); s.pinned = lines(v('sPin'));
     const oldGh = JSON.stringify([g.owner, g.repo, g.branch]);
     g.owner = v('gOwner').trim(); g.repo = v('gRepo').trim(); g.branch = v('gBranch').trim(); k.ghToken = v('gTok').trim(); g.includes = lines(v('gInc')); g.excludes = lines(v('gExc')); g.exts = lines(v('gExt')).map((x) => (x.startsWith('.') ? x : '.' + x)); g.maxKB = Math.max(1, Math.round(n('gKB', 400)));

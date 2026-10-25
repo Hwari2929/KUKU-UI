@@ -3,7 +3,7 @@ const Chats = {
   async load() { S.chats = (await DB.all('chats')).sort((a, b) => b.updated - a.updated); for (const c of S.chats) if (c.model && !S.settings.models[c.model]) c.model = ''; },   // 지워진 모델(Fable 등)은 기본값으로
   get(id) { return S.chats.find((c) => c.id === id) || null; },
   create(title = '새 대화') {
-    const c = { id: uid('c'), title, created: Date.now(), updated: Date.now(), skill: '', model: '', messages: [] };
+    const c = { id: uid('c'), title, created: Date.now(), updated: Date.now(), skill: '', model: '', effort: '', messages: [] };
     S.chats.unshift(c); this.save(c); return c;
   },
   save(c) { c.updated = Date.now(); return DB.put('chats', c.id, c); },
@@ -81,7 +81,7 @@ async function runTurn(chat, text, { signal } = {}) {
       live.iter = iter; live.text = ''; live.status = 'wait'; live.note = ''; live.usage = null; live.tools = live.tools.filter((t) => t.done); push();
       let r;
       try {
-        r = await LLM.stream({ model, sys: blocks, tools, messages: msgs, maxTokens: S.settings.maxTokens, temperature: S.settings.temperature, ttl: S.settings.cacheTTL },
+        r = await LLM.stream({ model, sys: blocks, tools, messages: msgs, maxTokens: S.settings.maxTokens, temperature: S.settings.temperature, ttl: S.settings.cacheTTL, effort: effortOf(chat) },
           { signal: ac.signal,
             onText: (d, full) => { live.text = full; live.status = 'stream'; push(); },
             onToolStart: (b) => { live.tools.push({ name: b.name, done: false, summary: '' }); live.status = 'tool'; push(); },
